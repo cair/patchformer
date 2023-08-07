@@ -1,14 +1,22 @@
 """
 Altered version of https://github.com/WangLibo1995/GeoSeg/blob/main/geoseg/models/DCSwin.py
 """
-
+import einops
 import torch
 import torch.nn as nn
+import torch.nn.init as init
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 import numpy as np
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
+from utils.patch_utils import patchify_mask, check_homogeneity_binary, check_homogeneity_classes, check_heterogeneity_binary
+from models.patch_classifier import PatchClassifier, DualPatchClassifier
+from models.query_attention import Attention as QueryAttention
+from losses.dice import DiceLoss
+from utils.metric_utils import acc_pytorch as acc
+
+dice_loss = DiceLoss(mode="multiclass", ignore_index=7)
 
 class MaxPoolLayer(nn.Sequential):
     def __init__(self, kernel_size=3, dilation=1, stride=1):
@@ -457,6 +465,8 @@ class BasicLayer(nn.Module):
         self.depth = depth
         self.use_checkpoint = use_checkpoint
 
+        self.dim = dim
+
         # build blocks
         self.blocks = nn.ModuleList([
             SwinTransformerBlock(
@@ -508,12 +518,14 @@ class BasicLayer(nn.Module):
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
         attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
 
-        for blk in self.blocks:
+        for blki, blk in enumerate(self.blocks):
+
             blk.H, blk.W = H, W
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x, attn_mask)
             else:
                 x = blk(x, attn_mask)
+
         if self.downsample is not None:
             x_down = self.downsample(x, H, W)
             Wh, Ww = (H + 1) // 2, (W + 1) // 2
@@ -613,8 +625,21 @@ class SwinTransformer(nn.Module):
                  patch_norm=True,
                  out_indices=(0, 1, 2, 3),
                  frozen_stages=-1,
-                 use_checkpoint=False):
+                 use_checkpoint=False,
+                 binary = False,
+                 num_classes = 2):
         super().__init__()
+
+        self.patch_sizes = [4, 8, 16, 32]
+        self.encs = [embed_dim * (2 ** i) for i in range(len(depths))]
+
+        if binary:
+            self.num_patch_classes = 2
+        else:
+            self.num_patch_classes = num_classes + 1
+
+        self.patch_classifier = None
+        self.dual_patch_classifier = None
 
         self.pretrain_img_size = pretrain_img_size
         self.num_layers = len(depths)
@@ -700,7 +725,71 @@ class SwinTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x):
+    def patch_forward(self, x, mask=None):
+        """Forward function."""
+        x = self.patch_embed(x)
+
+        Wh, Ww = x.size(2), x.size(3)
+        if self.ape:
+            # interpolate the position embedding to the corresponding size
+            absolute_pos_embed = F.interpolate(self.absolute_pos_embed, size=(Wh, Ww), mode='bicubic')
+            x = (x + absolute_pos_embed).flatten(2).transpose(1, 2)  # B Wh*Ww C
+        else:
+            x = x.flatten(2).transpose(1, 2)
+        x = self.pos_drop(x)
+
+        outs = []
+        patch_losses = torch.zeros((4,), device=x.device)
+
+        res = None
+
+        for i in range(self.num_layers):
+            layer = self.layers[i]
+
+            x_out, H, W, x, Wh, Ww = layer(x, Wh, Ww)
+
+            if i in self.out_indices:
+                norm_layer = getattr(self, f'norm{i}')
+
+                # Normalize the latent representation
+                x_out = norm_layer(x_out)
+
+                out_index = self.out_indices.index(i)
+                # Reshape so that it fits into the patch classifier (B, C, H, W)
+                out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
+
+                if isinstance(self.patch_classifier, PatchClassifier):
+                    _, xi = self.patch_classifier(out.permute(0, 2, 3, 1), out_index)
+                else:
+                    out, xi = self.patch_classifier(out.permute(0, 2, 3, 1), res, out_index)
+
+                res = out
+
+                if self.num_patch_classes == 2:
+                    xi = F.sigmoid(xi)
+                else:
+                    xi = F.softmax(xi, dim=-1)
+
+
+                if mask is not None:
+                    pmask = patchify_mask(mask, self.patch_sizes[out_index])
+
+                    if self.num_patch_classes == 2:
+                        xi = torch.cat([1 - xi, xi], dim=-1)
+                        pmask = check_heterogeneity_binary(pmask, -1)
+                    else:
+                        pmask = check_homogeneity_classes(pmask, self.num_patch_classes - 1, -1)
+                    loss = dice_loss(xi, pmask)
+                    patch_losses[out_index] = loss
+
+                outs.append(out)
+
+        if mask is not None:
+            return tuple(outs), patch_losses
+
+        return tuple(outs), None
+
+    def forward(self, x, mask=None):
         """Forward function."""
         x = self.patch_embed(x)
         # print('patch_embed', x.size())
@@ -715,19 +804,24 @@ class SwinTransformer(nn.Module):
         x = self.pos_drop(x)
 
         outs = []
+
+        patch_losses = None
+
         for i in range(self.num_layers):
             layer = self.layers[i]
+
             x_out, H, W, x, Wh, Ww = layer(x, Wh, Ww)
 
             if i in self.out_indices:
                 norm_layer = getattr(self, f'norm{i}')
+
                 x_out = norm_layer(x_out)
 
                 out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
                 outs.append(out)
-                # print('layer{} out size {}'.format(i, out.size()))
 
-        return tuple(outs)
+        return tuple(outs), patch_losses
+
 
     def train(self, mode=True):
         """Convert the models into training mode while keep layers freezed."""
@@ -907,26 +1001,28 @@ class DCSwin(nn.Module):
                  embed_dim=128,
                  depths=(2, 2, 18, 2),
                  num_heads=(4, 8, 16, 32),
-                 frozen_stages=2):
+                 frozen_stages=2,
+                 binary=False):
         super(DCSwin, self).__init__()
         self.encoder_channels = encoder_channels
-        self.backbone = SwinTransformer(embed_dim=embed_dim, depths=depths, num_heads=num_heads, frozen_stages=frozen_stages)
+        self.backbone = SwinTransformer(embed_dim=embed_dim, depths=depths, num_heads=num_heads, frozen_stages=frozen_stages, binary=binary, num_classes=num_classes)
         self.decoder = Decoder(encoder_channels, dropout, atrous_rates, num_classes)
 
-    def forward(self, x):
-        x1, x2, x3, x4 = self.backbone(x)
+    def forward(self, x, mask=None):
+        (x1, x2, x3, x4), _ = self.backbone(x, mask)
         x = self.decoder(x1, x2, x3, x4)
         return (x1, x2, x3, x4), x
 
 
-def dcswin_base(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_base.pth'):
+def dcswin_base(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_base.pth', binary=False):
     # pretrained weights are load from official repo of Swin Transformer
     model = DCSwin(encoder_channels=(128, 256, 512, 1024),
                    num_classes=num_classes,
                    embed_dim=128,
                    depths=(2, 2, 18, 2),
                    num_heads=(4, 8, 16, 32),
-                   frozen_stages=0)
+                   frozen_stages=0,
+                   binary=binary)
     if pretrained and weight_path is not None:
         old_dict = torch.load(weight_path)['state_dict']
         model_dict = model.state_dict()
@@ -936,13 +1032,14 @@ def dcswin_base(pretrained=True, num_classes=4, weight_path='pretrained_weights/
     return model
 
 
-def dcswin_small(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_small.pth'):
+def dcswin_small(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_small.pth', binary=False):
     model = DCSwin(encoder_channels=(96, 192, 384, 768),
                    num_classes=num_classes,
                    embed_dim=96,
                    depths=(2, 2, 18, 2),
                    num_heads=(3, 6, 12, 24),
-                   frozen_stages=0)
+                   frozen_stages=0,
+                   binary=binary)
     if pretrained and weight_path is not None:
         old_dict = torch.load(weight_path)['state_dict']
         model_dict = model.state_dict()
@@ -952,13 +1049,14 @@ def dcswin_small(pretrained=True, num_classes=4, weight_path='pretrained_weights
     return model
 
 
-def dcswin_tiny(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_tiny.pth'):
+def dcswin_tiny(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_tiny.pth', binary=False):
     model = DCSwin(encoder_channels=(96, 192, 384, 768),
                    num_classes=num_classes,
                    embed_dim=96,
                    depths=(2, 2, 6, 2),
                    num_heads=(3, 6, 12, 24),
-                   frozen_stages=0)
+                   frozen_stages=0,
+                   binary=binary)
     if pretrained and weight_path is not None:
         old_dict = torch.load(weight_path)['state_dict']
         model_dict = model.state_dict()

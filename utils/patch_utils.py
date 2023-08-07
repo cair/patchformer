@@ -52,6 +52,31 @@ def check_homogeneity_binary(tensor, ignore_index):
 
     return tensor_bool.long()
 
+def check_heterogeneity_binary(tensor, ignore_index):
+    # Get the shape of the tensor
+    original_shape = tensor.shape
+    last_dim = original_shape[-1]
+
+    # Reshape the tensor to 2D for easy comparison
+    tensor = tensor.reshape(-1, last_dim)
+
+    # Create a mask for elements to ignore
+    ignore_mask = tensor.eq(ignore_index)
+
+    # Compare each element with the first along the last dimension, ignoring specified class
+    tensor_bool = tensor.eq(tensor[:, 0].unsqueeze(1)) & ~ignore_mask
+
+    # Check if all elements along the last dimension are the same, ignoring specified class
+    tensor_bool = tensor_bool.all(dim=-1)
+
+    # Negate the boolean tensor to get heterogeneity
+    tensor_bool = ~tensor_bool
+
+    # Reshape the tensor back to original shape (minus last dimension)
+    tensor_bool = tensor_bool.reshape(original_shape[:-1])
+
+    return tensor_bool.long()
+
 def patchify_mask(mask, patch_size):
     # Input mask is of size (b, h, w)
     # Get batch size, height and width
@@ -65,3 +90,8 @@ def patchify_mask(mask, patch_size):
     patched_mask = patches.contiguous().view(b, h // patch_size, w // patch_size, patch_size * patch_size)
 
     return patched_mask
+
+if __name__ == "__main__":
+
+
+    tensor = torch.tensor([[]])

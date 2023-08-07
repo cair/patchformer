@@ -1,19 +1,15 @@
 import os
 import os.path as osp
-import numpy as np
 import torch
 from torch.utils.data import Dataset
-import cv2
-import matplotlib.pyplot as plt
 import albumentations as albu
 from .transform import *
-import matplotlib.patches as mpatches
 from PIL import Image
 import random
 
 
-CLASSES = ('ImSurf', 'Building', 'LowVeg', 'Tree', 'Car', 'Clutter')
-PALETTE = [[255, 255, 255], [0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 204, 0], [255, 0, 0]]
+CLASSES = ('Background', 'Building')
+PALETTE = [[255, 255, 255], [0, 0, 255]]
 
 def get_training_transform():
     train_transform = [
@@ -24,9 +20,9 @@ def get_training_transform():
     return albu.Compose(train_transform)
 
 
-def train_aug(img, mask):
+def train_aug(img, mask, crop_size):
     crop_aug = Compose([RandomScale(scale_list=[0.75, 1.0, 1.25, 1.5], mode='value'),
-                        SmartCropV1(crop_size=384, max_ratio=0.75, ignore_index=len(CLASSES), nopad=False)])
+                        SmartCropV1(crop_size=crop_size, max_ratio=0.75, ignore_index=len(CLASSES), nopad=False)])
     img, mask = crop_aug(img, mask)
     img, mask = np.array(img), np.array(mask)
     aug = get_training_transform()(image=img.copy(), mask=mask.copy())
@@ -48,9 +44,9 @@ def val_aug(img, mask):
     return img, mask
 
 
-class PotsdamDataset(Dataset):
-    def __init__(self, data_root='data/potsdam/test', mode='val', img_dir='images', mask_dir='masks',
-                 img_suffix='.tif', mask_suffix='.png', transform=val_aug, mosaic_ratio=0.0,
+class InriaDataset(Dataset):
+    def __init__(self, data_root='data/inria/test', mode='val', img_dir='images', mask_dir='masks',
+                 img_suffix='.png', mask_suffix='.png', transform=val_aug, mosaic_ratio=0.0,
                  img_size=512):
         self.data_root = data_root
         self.img_dir = img_dir
@@ -62,7 +58,7 @@ class PotsdamDataset(Dataset):
         self.mosaic_ratio = mosaic_ratio
         self.img_size = img_size
         self.img_ids = self.get_img_ids(self.data_root, self.img_dir, self.mask_dir)
-        self.img_ids = self.img_ids[:int(0.1 * len(self.img_ids))]
+        self.img_ids = self.img_ids[:int(0.2 * len(self.img_ids))]
         self.num_classes = len(CLASSES)
 
     def __getitem__(self, index):
@@ -78,6 +74,9 @@ class PotsdamDataset(Dataset):
 
         img = torch.from_numpy(img).permute(2, 0, 1).float()
         mask = torch.from_numpy(mask).long()
+
+        mask[mask == 255] = 1
+
         img_id = self.img_ids[index]
         results = dict(img_id=img_id, img=img, mask=mask)
         return results
