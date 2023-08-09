@@ -30,6 +30,46 @@ def check_homogeneity_classes(tensor, num_classes, ignore_index):
 
     return class_tensor
 
+
+def check_homogeneity_classes_no_extra_class(tensor, num_classes, ignore_index):
+    # Get the shape of the tensor
+    original_shape = tensor.shape
+    last_dim = original_shape[-1]
+
+    # Reshape the tensor to 2D for easy comparison
+    tensor = tensor.reshape(-1, last_dim)
+
+    # Create a mask for elements to ignore
+    ignore_mask = tensor.eq(ignore_index)
+
+    # Compare each element with the first along the last dimension, ignoring specified class
+    tensor_bool = tensor.eq(tensor[:, 0].unsqueeze(1)) & ~ignore_mask
+
+    # Check if all elements along the last dimension are the same, ignoring specified class
+    tensor_homogeneous = tensor_bool.all(dim=-1)
+
+    # One-hot encode the tensor ignoring the ignore_index
+    one_hot = torch.zeros(tensor.size(0), tensor.size(1), num_classes, device=tensor.device)
+    tensor_masked = tensor.clone()  # Duplicate tensor
+    tensor_masked[
+        ignore_mask] = -1  # Replace ignore_index with a safe negative value to avoid interference with one-hot encoding
+    one_hot.scatter_(2, tensor_masked.unsqueeze(-1).clamp(min=0).long(), 1)
+
+    # Sum the one-hot representations to get the count of each class for each patch
+    class_counts = one_hot.sum(dim=1)
+
+    # Find the class with the maximum count for each patch
+    _, majority_class = class_counts.max(dim=-1)
+
+    # Use the majority class for heterogeneous patches and the class of homogeneous patches otherwise
+    class_tensor = torch.where(tensor_homogeneous, tensor[:, 0], majority_class)
+
+    # Reshape the class tensor back to the original shape (minus last dimension)
+    class_tensor = class_tensor.reshape(original_shape[:-1])
+
+    return class_tensor
+
+
 def check_homogeneity_binary(tensor, ignore_index):
     # Get the shape of the tensor
     original_shape = tensor.shape

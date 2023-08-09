@@ -11,6 +11,7 @@ import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -25,8 +26,10 @@ def parse_args():
     parser.add_argument("-bs", "--batch_size", type=int, default=8)
     parser.add_argument("-n", "--name", type=str, default="")
     parser.add_argument("-e", "--epochs", type=int, default=20)
-    parser.add_argument("-lr", "--learning_rate", type=float, default=3e-4)
+    parser.add_argument("-lr", "--learning_rate", type=float, default=1e-4)
     parser.add_argument("-dual", "--dual", type=bool, default=False, help="Use dual attention")
+    parser.add_argument("-split", "--split", type=int, default=None, help="Use a split of the dataset")
+    parser.add_argument("-seed", "--seed", type=int, default=12, help="Seed for reproducibility")
 
     return parser.parse_args()
 
@@ -91,11 +94,11 @@ def main():
     if args.name == "":
         args.name = input("Please enter a name for this run: ")
 
-    seed_everything(46) # 12 used, 5 used, 46
+    seed_everything(args.seed) # 12 used, 5 used, 46
 
-    train_dataset, val_dataset = get_datasets(args.dataset, args.image_size)
+    train_dataset, val_dataset = get_datasets(args.dataset, args.image_size, args.split)
     train_loader, val_loader = get_loader(train_dataset, args.batch_size, True, 4), get_loader(val_dataset, 1, False, 4)
-
+    
     num_classes = train_dataset.num_classes
 
     model = get_model(args.model, args.model_size, num_classes, args.binary, input_size=(args.image_size, args.image_size))
@@ -103,14 +106,14 @@ def main():
     if args.model == "dcswin":
         lm = DCSwinLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
     elif args.model == "hiera":
-        lm = HieraLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, binary=args.binary)
+        lm = HieraLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
     else:
         raise NotImplementedError
 
 
     project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}"
 
-    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}", lm)
+    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_split{args.split}_seed{args.seed}", lm)
     callbacks = get_callbacks(project_name, args.name)
 
     trainer = L.Trainer(max_epochs=args.epochs, accelerator="gpu", devices=[args.gpu], logger=loggers, callbacks=callbacks)
@@ -121,4 +124,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()

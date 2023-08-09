@@ -3,13 +3,21 @@ import os.path as osp
 import torch
 from torch.utils.data import Dataset
 import albumentations as albu
-from .transform import *
+from loaders.inria.transform import *
 from PIL import Image
+
+import re
 import random
 
 
 CLASSES = ('Background', 'Building')
 PALETTE = [[255, 255, 255], [0, 0, 255]]
+
+
+SPLIT_1 = list(range(1, 5))
+SPLIT_2 = list(range(1, 9))
+SPLIT_3 = list(range(1, 17))
+SPLIT_4 = list(range(1, 33))
 
 def get_training_transform():
     train_transform = [
@@ -47,7 +55,7 @@ def val_aug(img, mask):
 class InriaDataset(Dataset):
     def __init__(self, data_root='data/inria/test', mode='val', img_dir='images', mask_dir='masks',
                  img_suffix='.png', mask_suffix='.png', transform=val_aug, mosaic_ratio=0.0,
-                 img_size=512):
+                 img_size=512, split=None):
         self.data_root = data_root
         self.img_dir = img_dir
         self.mask_dir = mask_dir
@@ -58,8 +66,35 @@ class InriaDataset(Dataset):
         self.mosaic_ratio = mosaic_ratio
         self.img_size = img_size
         self.img_ids = self.get_img_ids(self.data_root, self.img_dir, self.mask_dir)
-        self.img_ids = self.img_ids[:int(0.2 * len(self.img_ids))]
         self.num_classes = len(CLASSES)
+        self.split = split
+        if self.split != None:
+            self.img_ids = self.get_split()
+
+
+    def get_split(self):
+        # First split the filenames using "_"
+        if self.split == 1:
+            self.split = SPLIT_1
+        elif self.split == 2:
+            self.split = SPLIT_2
+        elif self.split == 3:
+            self.split = SPLIT_3
+        elif self.split == 4:
+            self.split = SPLIT_4
+        else:
+            raise ValueError("Split number must be between 1 and 4")
+
+        new_img_ids = list()
+        for img_id in self.img_ids:
+            temp_id = img_id.split("_")
+            filename = temp_id[0]
+            # Get the split number using regex
+            split_num = int(re.findall(r'\d+', filename)[0])
+            if split_num in self.split:
+                new_img_ids.append(img_id)
+
+        return new_img_ids
 
     def __getitem__(self, index):
         p_ratio = random.random()

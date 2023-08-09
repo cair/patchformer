@@ -10,7 +10,7 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
-from utils.patch_utils import patchify_mask, check_homogeneity_binary, check_homogeneity_classes, check_heterogeneity_binary
+from utils.patch_utils import patchify_mask, check_homogeneity_binary, check_homogeneity_classes, check_heterogeneity_binary, check_homogeneity_classes_no_extra_class
 from models.patch_classifier import PatchClassifier, DualPatchClassifier
 from models.query_attention import Attention as QueryAttention
 from losses.dice import DiceLoss
@@ -633,10 +633,7 @@ class SwinTransformer(nn.Module):
         self.patch_sizes = [4, 8, 16, 32]
         self.encs = [embed_dim * (2 ** i) for i in range(len(depths))]
 
-        if binary:
-            self.num_patch_classes = 2
-        else:
-            self.num_patch_classes = num_classes + 1
+        self.num_patch_classes = num_classes + 1
 
         self.patch_classifier = None
         self.dual_patch_classifier = None
@@ -779,6 +776,8 @@ class SwinTransformer(nn.Module):
                         pmask = check_heterogeneity_binary(pmask, -1)
                     else:
                         pmask = check_homogeneity_classes(pmask, self.num_patch_classes - 1, -1)
+                        # pmask = check_homogeneity_classes_no_extra_class(pmask, self.num_patch_classes - 1, -1)
+
                     loss = dice_loss(xi, pmask)
                     patch_losses[out_index] = loss
 

@@ -1,14 +1,14 @@
 from loaders.potsdam.potsdam import PotsdamDataset
 from loaders.inria.inria import InriaDataset
 
-def get_datasets(dataset: str, image_size: int):
+def get_datasets(dataset: str, image_size: int, split=None):
     if dataset == "potsdam":
-        training_dataset = PotsdamDataset(data_root="data/potsdam/train", mode="train", img_size=image_size)
-        validation_dataset = PotsdamDataset(data_root="data/potsdam/test", mode="val", img_size=image_size)
+        training_dataset = PotsdamDataset(data_root="data/potsdam/train", mode="train", img_size=image_size, split=split)
+        validation_dataset = PotsdamDataset(data_root="data/potsdam/test", mode="val", img_size=image_size, split=None)
         return training_dataset, validation_dataset
     elif dataset == "inria":
-        training_dataset = InriaDataset(data_root="data/inria/train", mode="train", img_size=image_size)
-        validation_dataset = InriaDataset(data_root="data/inria/val", mode="val", img_size=image_size)
+        training_dataset = InriaDataset(data_root="data/inria/train", mode="train", img_size=image_size, split=split)
+        validation_dataset = InriaDataset(data_root="data/inria/val", mode="val", img_size=image_size, split=None)
         return training_dataset, validation_dataset
 
 if __name__ == "__main__":

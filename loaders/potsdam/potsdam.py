@@ -15,6 +15,11 @@ import random
 CLASSES = ('ImSurf', 'Building', 'LowVeg', 'Tree', 'Car', 'Clutter')
 PALETTE = [[255, 255, 255], [0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 204, 0], [255, 0, 0]]
 
+SPLIT_1 = ["2_10", "3_10", "4_10"]
+SPLIT_2 = ["2_10", "3_10", "4_10", "5_10", "6_7", "7_7"]
+SPLIT_3 = ["2_10", "3_10", "4_10", "5_10", "6_7", "7_7", "2_11", "3_11", "4_11", "5_11", "6_8", "7_8"]
+SPLIT_4 = []
+
 def get_training_transform():
     train_transform = [
         # albu.RandomBrightnessContrast(brightness_limit=0.25, contrast_limit=0.25, p=0.15),
@@ -51,7 +56,7 @@ def val_aug(img, mask):
 class PotsdamDataset(Dataset):
     def __init__(self, data_root='data/potsdam/test', mode='val', img_dir='images', mask_dir='masks',
                  img_suffix='.tif', mask_suffix='.png', transform=val_aug, mosaic_ratio=0.0,
-                 img_size=512):
+                 img_size=512, split=None):
         self.data_root = data_root
         self.img_dir = img_dir
         self.mask_dir = mask_dir
@@ -62,8 +67,36 @@ class PotsdamDataset(Dataset):
         self.mosaic_ratio = mosaic_ratio
         self.img_size = img_size
         self.img_ids = self.get_img_ids(self.data_root, self.img_dir, self.mask_dir)
-        self.img_ids = self.img_ids[:int(0.1 * len(self.img_ids))]
         self.num_classes = len(CLASSES)
+        self.split = split
+
+        if self.split is not None:
+            self.img_ids = self.get_split()
+
+    def get_split(self):
+        
+        print(self.split == 1)
+        
+        if self.split == 1:
+            self.split = SPLIT_1
+        elif self.split == 2:
+            self.split = SPLIT_2
+        elif self.split == 3:
+            self.split = SPLIT_3
+        elif self.split == 4:
+            return self.img_ids
+        else:
+            raise NotImplementedError("Split not implemented")
+
+        new_img_ids = list()
+        
+        for img_id in self.img_ids:
+            bits = img_id.split('_')
+            important_bits = "_".join([bits[2], bits[3]])
+            if important_bits in self.split:
+                new_img_ids.append(img_id)
+
+        return new_img_ids
 
     def __getitem__(self, index):
         p_ratio = random.random()

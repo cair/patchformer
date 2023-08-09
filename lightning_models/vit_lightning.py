@@ -6,13 +6,11 @@ import torch.nn.functional as F
 from utils.model_utils import get_patch_classifier
 
 from utils.metric_utils import iou_pytorch as iou, acc_pytorch as acc
-from utils.patch_utils import patchify_mask, check_homogeneity_binary, check_homogeneity_classes
-from losses.dice import DiceLoss
 
 from statistics import mean
 
 
-class DCSwinLightning(L.LightningModule):
+class ViTLightning(L.LightningModule):
 
     def __init__(self, model: torch.nn.Module,
                  train_loader: torch.utils.data.DataLoader,
@@ -29,18 +27,16 @@ class DCSwinLightning(L.LightningModule):
         self.val_loader = val_loader
         self.num_classes = num_classes
 
-        self.dice_loss = DiceLoss(mode="multiclass", ignore_index=self.num_classes)
+        # self.dice_loss = DiceLoss(mode="multiclass", ignore_index=train_loader.dataset.num_classes)
         self.ce_loss = torch.nn.CrossEntropyLoss(ignore_index=self.num_classes, label_smoothing=0.1)
 
         self.learning_rate = learning_rate
         self.patch_learning = patch_learning
-        self.dual = dual
-
-        # Hacky but works
-        if patch_learning:
-            self.model.backbone.patch_classifier = get_patch_classifier(self.model.backbone.encs, self.num_classes + 1, dual=dual)
 
         self.patch_sizes = [4, 8, 16, 32]
+
+        if patch_learning:
+            self.model.patch_classifier = get_patch_classifier(self.model.encs, self.num_classes + 1, dual=dual)
 
         # Training metrics
         self.train_iou = list()
@@ -60,11 +56,20 @@ class DCSwinLightning(L.LightningModule):
     def forward(self, x, mask=None):
 
         if self.patch_learning:
-            xs, patch_loss = self.model.backbone.patch_forward(x, mask)
+            x, patch_loss = self.model.patch_forward(x, mask)
         else:
-            xs, patch_loss = self.model.backbone(x, mask)
+            x, patch_loss = self.model(x, mask)
+        """
+        if self.patch_learning:
+            stems, patch_loss = self.patch_loss(xs, mask)
 
-        return patch_loss, self.model.decoder(*xs)
+            for i in range(len(xs)):
+                xs[i] = xs[i] + stems[i]
+
+        if mask is not None:
+            return patch_loss, self.model.decoder(*xs)
+        """
+        return patch_loss, x
 
     def calculate_metrics(self, logits, mask, step_type="train"):
         prediction = F.softmax(logits, dim=1).argmax(dim=1)
@@ -130,17 +135,18 @@ class DCSwinLightning(L.LightningModule):
             _, x = self.forward(img)
 
         # Segmentation loss
-        dice_loss = self.dice_loss(x, mask)
+        # dice_loss = self.dice_loss(x, mask)
         ce_loss = self.ce_loss(x, mask)
 
         if self.patch_learning:
-            loss_list = torch.cat([dice_loss.unsqueeze(0), ce_loss.unsqueeze(0), patch_losses.mean().unsqueeze(0)], dim=0)
-            loss = torch.sum(loss_list)
+            loss_list = torch.cat([ce_loss.unsqueeze(0), patch_losses.mean().unsqueeze(0)], dim=0)
+            # loss_list = torch.cat([dice_loss.unsqueeze(0), ce_loss.unsqueeze(0)], dim=0)
         else:
-            loss = ce_loss + dice_loss
+            loss_list = torch.cat([ce_loss.unsqueeze(0)], dim=0)
 
+        loss = torch.sum(loss_list)
 
-        self.log("train_segmentation_loss", dice_loss.cpu().item() + ce_loss.cpu().item(), batch_size=img.size(0), on_epoch=True, sync_dist=True)
+        self.log("train_segmentation_loss", ce_loss.cpu().item(), batch_size=img.size(0), on_epoch=True, sync_dist=True)
 
         self.train_loss.append(loss.item())
         self.calculate_metrics(x, mask, step_type="train")
@@ -162,10 +168,10 @@ class DCSwinLightning(L.LightningModule):
 
         # Segmentation loss
 
-        dice_loss = self.dice_loss(x, mask)
+        # dice_loss = self.dice_loss(x, mask)
         ce_loss = self.ce_loss(x, mask)
 
-        self.log("val_segmentation_loss", dice_loss.cpu().item() + ce_loss.cpu().item(), batch_size=img.size(0), on_epoch=True,
+        self.log("val_segmentation_loss", ce_loss.cpu().item(), batch_size=img.size(0), on_epoch=True,
                  sync_dist=True)
 
         self.val_loss.append(ce_loss.item())
@@ -173,8 +179,6 @@ class DCSwinLightning(L.LightningModule):
 
         self.log("val_loss", ce_loss.cpu().item(), batch_size=img.size(0), on_epoch=True, sync_dist=True)
 
-
-    
     def train_dataloader(self):
         return self.train_loader
 
@@ -183,5 +187,5 @@ class DCSwinLightning(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=2, eta_min=5e-7, verbose=True)
-        return [optimizer], [scheduler]
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=100, T_mult=2, eta_min=1e-6)
+        return [optimizer] , [scheduler]

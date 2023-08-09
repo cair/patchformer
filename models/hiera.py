@@ -542,8 +542,8 @@ class Hiera(nn.Module):
         self.encs = [embed_dim * (2 ** i) for i in range(len(stages))]
         self.num_patch_classes = num_classes + 1
         self.dc = Decoder(num_classes=num_classes)
-        self.patch_classifier = DualPatchClassifier(self.encs, self.num_patch_classes, self.num_patch_classes == 2)
-        # self.patch_classifier = PatchClassifier(self.encs, self.num_patch_classes, self.num_patch_classes == 2)
+        self.patch_classifier = None
+        self.dual_patch_classifier = None
 
 
         self.reroll = Reroll(
@@ -705,8 +705,10 @@ class Hiera(nn.Module):
                 out_index = self.stage_ends.index(i)
                 intermediate = intermediate.permute(0, 3, 1, 2)
 
-                # intermediate, xi = self.patch_classifier(intermediate.permute(0, 2, 3, 1), out_index)
-                intermediate, xi = self.patch_classifier(intermediate.permute(0, 2, 3, 1), res, out_index)
+                if isinstance(self.patch_classifier, PatchClassifier):
+                    _, xi = self.patch_classifier(intermediate.permute(0, 2, 3, 1), out_index)
+                else:
+                    intermediate, xi = self.patch_classifier(intermediate.permute(0, 2, 3, 1), res, out_index)
 
                 res = intermediate
 
@@ -724,7 +726,7 @@ class Hiera(nn.Module):
                     else:
                         pmask = check_homogeneity_classes(pmask, self.num_patch_classes - 1, -1)
 
-                    loss = dice_loss(xi.permute(0, 3, 1, 2), pmask)
+                    loss = dice_loss(xi, pmask)
                     patch_losses[out_index] = loss
 
                 intermediates.append(intermediate)

@@ -36,7 +36,7 @@ class Conv3x3(nn.Module):
             in_features,
             hidden_features=None,
             out_features=None,
-            act_layer=nn.ReLU,
+            act_layer=nn.GELU,
             norm_layer=None,
             bias=True,
             drop=0.,
@@ -242,13 +242,147 @@ class DPCV4(nn.Module):
         return x, classification.permute(0, 3, 1, 2)
 
 
+class S1(nn.Module):
+    def __init__(self, dim, hdim, odim):
+        super().__init__()
+
+        
+        self.ln = nn.LayerNorm(dim)
+        self.mlp = Mlp(dim, hdim, hdim)
+        self.cls = Mlp(hdim, hdim, odim)
+
+    def forward(self, x):
+        x = self.ln(x)
+        x = self.mlp(x)
+        cls = self.cls(x)
+
+        return x.permute(0, 3, 1, 2), cls.permute(0, 3, 1, 2)
+
+
+class S2(nn.Module):
+    def __init__(self, dim, hdim, odim):
+        super().__init__()
+
+        self.ln = nn.LayerNorm(dim)
+        self.conv = Conv3x3(dim, hdim, hdim)
+        self.cls = Mlp(hdim, hdim, odim)
+
+    def forward(self, x):
+        x = self.ln(x)
+        x = self.conv(x.permute(0, 3, 1, 2))
+        cls = self.cls(x.permute(0, 2, 3, 1))
+
+        return x, cls.permute(0, 3, 1, 2)
+
+
+class D1(nn.Module):
+    def __init__(self, dim, hdim, odim):
+        super().__init__()
+
+        self.ln = nn.LayerNorm(dim)
+
+        self.res_up = nn.Conv2d(dim // 2, dim, kernel_size=3, stride=2, padding=1)
+
+        self.mlp = Mlp(dim * 2, hdim * 2, hdim * 2)
+        self.cls = Mlp(hdim * 2, hdim, odim)
+
+    def forward(self, x, res):
+        """
+
+        :param x: should be of shape (b, c, h, w)
+        :param res: should be of shape (b, c, h, w)
+        :return: x (b, c, h, w), cls (b, h, w, odim)
+        """
+
+        res = self.res_up(res)
+
+        x = self.ln(x)
+        res = self.ln(res.permute(0, 2, 3, 1))
+
+        xres = torch.cat([res, x], dim=-1)
+
+        x = self.mlp(xres)
+        cls = self.cls(x)
+
+        return x.permute(0, 3, 1, 2), cls.permute(0, 3, 1, 2)
+
+
+class D2(nn.Module):
+    def __init__(self, dim, hdim, odim):
+        super().__init__()
+
+        self.ln = nn.LayerNorm(dim)
+
+        self.res_up = nn.Conv2d(dim // 2, dim, kernel_size=3, stride=2, padding=1)
+
+        self.conv = Conv3x3(dim * 2, hdim, hdim)
+        self.cls = Mlp(hdim, hdim, odim)
+
+    def forward(self, x, res):
+        """
+
+        :param x: should be of shape (b, c, h, w)
+        :param res: should be of shape (b, c, h, w)
+        :return: x (b, c, h, w), cls (b, h, w, odim)
+        """
+
+        res = self.res_up(res)
+
+        x = self.ln(x)
+        res = self.ln(res.permute(0, 2, 3, 1))
+
+        xres = torch.cat([res, x], dim=-1).permute(0, 3, 1, 2)
+
+        x = self.conv(xres)
+        cls = self.cls(x.permute(0, 2, 3, 1))
+
+        return x, cls.permute(0, 3, 1, 2)
+
+
+class D3(nn.Module):
+    def __init__(self, dim, hdim, odim):
+        super().__init__()
+
+        self.ln = nn.LayerNorm(dim)
+
+        self.res_up = nn.Conv2d(dim // 2, dim, kernel_size=3, stride=2, padding=1)
+
+        self.x_conv = Conv3x3(dim, hdim, hdim)
+
+        self.res_conv = Conv3x3(dim, hdim, hdim)
+
+        self.cls = Mlp(hdim * 2, hdim, odim)
+
+    def forward(self, x, res):
+        """
+
+        :param x: should be of shape (b, c, h, w)
+        :param res: should be of shape (b, c, h, w)
+        :return: x (b, c, h, w), cls (b, h, w, odim)
+        """
+
+        res = self.res_up(res)
+
+        x = self.ln(x).permute(0, 3, 1, 2)
+        res = self.ln(res.permute(0, 2, 3, 1)).permute(0, 3, 2, 1)
+
+        x = self.x_conv(x)
+        res = self.res_conv(res)
+
+        xres = torch.cat([res, x], dim=1)
+
+        cls = self.cls(xres.permute(0, 2, 3, 1))
+
+        return x, cls.permute(0, 3, 1, 2)
+
+
 
 class PatchClassifier(nn.Module):
     def __init__(self, encoder_channels, num_patch_classes):
         super().__init__()
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
-        self.patch_classifiers = nn.ModuleList([SPCV2(enc, enc, self.num_classes) for enc in self.encoder_channels])
+        self.patch_classifiers = nn.ModuleList([S1(enc, enc, self.num_classes) for enc in self.encoder_channels])
 
     def forward(self, x, idx):
         return self.patch_classifiers[idx](x)
@@ -258,7 +392,7 @@ class DualPatchClassifier(nn.Module):
         super().__init__()
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
-        self.patch_classifiers = nn.ModuleList([SPCV3(enc, enc, self.num_classes) if self.encoder_channels.index(enc) == 0 else DPCV4(enc, enc, self.num_classes) for enc in self.encoder_channels])
+        self.patch_classifiers = nn.ModuleList([S2(enc, enc, self.num_classes) if self.encoder_channels.index(enc) == 0 else D3(enc, enc, self.num_classes) for enc in self.encoder_channels])
 
     def forward(self, x, res, idx):
 
