@@ -382,7 +382,7 @@ class PatchClassifier(nn.Module):
         super().__init__()
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
-        self.patch_classifiers = nn.ModuleList([S1(enc, enc, self.num_classes) for enc in self.encoder_channels])
+        self.patch_classifiers = nn.ModuleList([S2(enc, enc, self.num_classes) for enc in self.encoder_channels])
 
     def forward(self, x, idx):
         return self.patch_classifiers[idx](x)

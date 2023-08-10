@@ -3,6 +3,7 @@ from datetime import datetime
 
 from lightning_models.dcswin_lightning import DCSwinLightning
 from lightning_models.hiera_lightning import HieraLightning
+from lightning_models.vit_lightning import ViTLightning
 from utils.model_utils import get_model, get_patch_classifier
 from loaders.dataset import get_datasets
 from loaders.loader import get_loader
@@ -107,6 +108,8 @@ def main():
         lm = DCSwinLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
     elif args.model == "hiera":
         lm = HieraLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
+    elif args.model == "dino":
+        lm = ViTLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
     else:
         raise NotImplementedError
 

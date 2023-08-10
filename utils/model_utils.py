@@ -1,6 +1,7 @@
 
 from models.dcswin import dcswin_tiny, dcswin_small, dcswin_base
 from models.hiera import hiera_tiny_224, hiera_small_224, hiera_base_224
+from models.vit import vit_small, vit_base
 from models.patch_classifier import PatchClassifier, DualPatchClassifier
 
 def get_model(model_name, model_size, num_classes, binary=False, input_size=(256, 256)):
@@ -20,6 +21,15 @@ def get_model(model_name, model_size, num_classes, binary=False, input_size=(256
             return hiera_small_224(num_classes=num_classes, input_size=input_size)
         elif model_size == "base":
             return hiera_base_224(num_classes=num_classes, input_size=input_size)
+        else:
+            raise NotImplementedError
+    elif model_name == "dino":
+        if model_size == "tiny":
+            return vit_small(patch_size=8)
+        elif model_size == "small":
+            return vit_small(patch_size=8)
+        elif model_size == "base":
+            return vit_base(patch_size=8)
         else:
             raise NotImplementedError
 

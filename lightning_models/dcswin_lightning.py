@@ -4,9 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from utils.model_utils import get_patch_classifier
-
 from utils.metric_utils import iou_pytorch as iou, acc_pytorch as acc
-from utils.patch_utils import patchify_mask, check_homogeneity_binary, check_homogeneity_classes
 from losses.dice import DiceLoss
 
 from statistics import mean

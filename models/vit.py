@@ -16,12 +16,20 @@ from typing import Callable, List, Any, Tuple, Dict, Optional
 
 import torch.nn.functional as F
 
+from utils.patch_utils import patchify_mask, check_homogeneity_binary, check_homogeneity_classes, check_heterogeneity_binary, check_homogeneity_classes_no_extra_class
+from models.patch_classifier import PatchClassifier
+from losses.dice import DiceLoss
+
+
 import torch
 import torch.nn as nn
 from torch import Tensor
 import torch.utils.checkpoint
 from torch.nn.init import trunc_normal_
 
+from models.upernet import UPerNet
+
+dice_loss = DiceLoss(mode="multiclass", ignore_index=7)
 logger = logging.getLogger("dinov2")
 
 def drop_path(x, drop_prob: float = 0.0, training: bool = False):
@@ -545,6 +553,7 @@ class DinoVisionTransformer(nn.Module):
         block_fn=Block,
         ffn_layer="mlp",
         block_chunks=1,
+        num_classes=6,
     ):
         """
         Args:
@@ -576,6 +585,10 @@ class DinoVisionTransformer(nn.Module):
         self.n_blocks = depth
         self.num_heads = num_heads
         self.patch_size = patch_size
+
+        self.patch_classifier = None
+        self.num_classes = num_classes
+        self.num_patch_classes = self.num_classes + 1
 
         self.patch_embed = embed_layer(img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
@@ -637,12 +650,61 @@ class DinoVisionTransformer(nn.Module):
 
         self.mask_token = nn.Parameter(torch.zeros(1, embed_dim))
 
+        self.out_indices = [2, 5, 8, 11]
+
         self.init_weights()
 
     def init_weights(self):
         trunc_normal_(self.pos_embed, std=0.02)
         nn.init.normal_(self.cls_token, std=1e-6)
         named_apply(init_weights_vit_timm, self)
+
+    def forward_blocks(self, x, mask=None):
+        blk = self.blocks[0]
+
+        res = None
+
+        patch_losses = torch.zeros((4,), device=x.device)
+
+        if mask is not None:
+            mask = patchify_mask(mask, self.patch_size)
+
+        for i in range(self.n_blocks):
+            x = blk[i](x)
+            if i in [2, 5, 8, 11]:
+                # Perform patch loss here
+                no_token_x = x[:, :-1]
+                token = x[:, -1]
+
+                H = W = int(math.sqrt(no_token_x.shape[1]))
+
+                patch_x = no_token_x.view(-1, H, W, self.num_features).permute(0, 3, 1, 2).contiguous()
+
+                out_index = self.out_indices.index(i)
+
+                if isinstance(self.patch_classifier, PatchClassifier):
+                    _, xi = self.patch_classifier(patch_x.permute(0, 2, 3, 1), out_index)
+                else:
+                    patch_x, xi = self.patch_classifier(patch_x.permute(0, 2, 3, 1), res, out_index)
+
+                res = patch_x
+
+                if mask is not None:
+                    if self.num_patch_classes == 2:
+                        xi = F.sigmoid(xi)
+                    else:
+                        xi = F.softmax(xi, dim=-1)
+
+                if self.num_patch_classes == 2:
+                    xi = torch.cat([1 - xi, xi], dim=-1)
+                    pmask = check_heterogeneity_binary(mask, -1)
+                else:
+                    pmask = check_homogeneity_classes(mask, self.num_patch_classes - 1, -1)
+
+                loss = dice_loss(xi, pmask)
+                patch_losses[out_index] = loss
+
+        return x, patch_losses
 
     def interpolate_pos_encoding(self, x, w, h):
         previous_dtype = x.dtype
@@ -700,22 +762,41 @@ class DinoVisionTransformer(nn.Module):
             )
         return output
 
-    def forward_features(self, x, masks=None):
+    def forward_features(self, x, mask=None):
         if isinstance(x, list):
-            return self.forward_features_list(x, masks)
+            return self.forward_features_list(x, mask)
 
-        x = self.prepare_tokens_with_masks(x, masks)
+        x = self.prepare_tokens_with_masks(x, mask)
 
         for blk in self.blocks:
             x = blk(x)
 
         x_norm = self.norm(x)
+
+        exit("Forward features")
+
         return {
             "x_norm_clstoken": x_norm[:, 0],
             "x_norm_patchtokens": x_norm[:, 1:],
             "x_prenorm": x,
-            "masks": masks,
+            "masks": mask,
         }
+
+    def forward_patch_features(self, x, mask=None):
+        if isinstance(x, list):
+            raise NotImplementedError("forward_patch_features not implemented for list input")
+
+        x = self.prepare_tokens_with_masks(x, masks=None)
+
+        print(x.shape)
+
+        x, patch_losses = self.forward_blocks(x, mask)
+
+        x = self.norm(x)
+
+        return x, patch_losses
+
+        exit("")
 
     def _get_intermediate_layers_not_chunked(self, x, n=1):
         x = self.prepare_tokens_with_masks(x)
@@ -769,12 +850,29 @@ class DinoVisionTransformer(nn.Module):
             return tuple(zip(outputs, class_tokens))
         return tuple(outputs)
 
-    def forward(self, *args, is_training=False, **kwargs):
-        ret = self.forward_features(*args, **kwargs)
-        if is_training:
-            return ret
+    def forward(self, x, mask=None):
+        if mask is None:
+            ret = self.forward_features(x, mask)
         else:
-            return self.head(ret["x_norm_clstoken"])
+            ret, patch_losses = self.forward_patch_features(x, mask)
+
+        return ret, patch_losses
+
+        exit("Bottom of forward")
+
+
+class DinoUPerNet(nn.Module):
+    def __init__(self, backbone, decoder, **kwargs):
+        super().__init__()
+
+        self.backbone = backbone
+        self.decoder = decoder
+
+    def forward(self, x, mask=None):
+        x, pl = self.backbone(x, mask)
+        # TODO: Decoder does not handle input correctly. Need to fix
+        x = self.decoder(x)
+        return pl, x
 
 
 def init_weights_vit_timm(module: nn.Module, name: str = ""):
@@ -784,9 +882,8 @@ def init_weights_vit_timm(module: nn.Module, name: str = ""):
         if module.bias is not None:
             nn.init.zeros_(module.bias)
 
-
-def vit_small(patch_size=16, **kwargs):
-    model = DinoVisionTransformer(
+def vit_small(patch_size=16, num_classes=6, **kwargs):
+    backbone = DinoVisionTransformer(
         patch_size=patch_size,
         embed_dim=384,
         depth=12,
@@ -795,6 +892,11 @@ def vit_small(patch_size=16, **kwargs):
         block_fn=partial(Block, attn_class=MemEffAttention),
         **kwargs,
     )
+
+    decoder = UPerNet(num_classes)
+
+    model = DinoUPerNet(backbone, decoder)
+
     return model
 
 

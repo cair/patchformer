@@ -626,7 +626,6 @@ class SwinTransformer(nn.Module):
                  out_indices=(0, 1, 2, 3),
                  frozen_stages=-1,
                  use_checkpoint=False,
-                 binary = False,
                  num_classes = 2):
         super().__init__()
 
@@ -636,7 +635,6 @@ class SwinTransformer(nn.Module):
         self.num_patch_classes = num_classes + 1
 
         self.patch_classifier = None
-        self.dual_patch_classifier = None
 
         self.pretrain_img_size = pretrain_img_size
         self.num_layers = len(depths)
@@ -762,13 +760,13 @@ class SwinTransformer(nn.Module):
 
                 res = out
 
-                if self.num_patch_classes == 2:
-                    xi = F.sigmoid(xi)
-                else:
-                    xi = F.softmax(xi, dim=-1)
-
 
                 if mask is not None:
+                    if self.num_patch_classes == 2:
+                        xi = F.sigmoid(xi)
+                    else:
+                        xi = F.softmax(xi, dim=-1)
+
                     pmask = patchify_mask(mask, self.patch_sizes[out_index])
 
                     if self.num_patch_classes == 2:

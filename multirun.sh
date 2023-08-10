@@ -71,5 +71,3 @@ for seed in $seeds; do
     echo Started for gpu $gpu seed $seed split $split
   done
 done
-
-wait
