@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 from timm.models.layers import DropPath, Mlp, ConvMlp
@@ -27,6 +28,76 @@ def checkerboard_tensors(tensor1, tensor2):
 
     return checkerboard
 
+class MyMaskUnitAttention(nn.Module):
+    """
+    Computes either Mask Unit or Global Attention. Also is able to perform q pooling.
+
+    Note: this assumes the tokens have already been flattened and unrolled into mask units.
+    See `Unroll` for more details.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        dim_out: int,
+        window_size: int = 2,
+        index: int = 0,
+    ):
+        """
+        Args:
+        - dim, dim_out: The input and output feature dimensions.
+        - heads: The number of attention heads.
+        - q_stride: If greater than 1, pool q with this stride. The stride should be flattened (e.g., 2x2 = 4).
+        - window_size: The current (flattened) size of a mask unit *after* pooling (if any).
+        - use_mask_unit_attn: Use Mask Unit or Global Attention.
+        """
+        super().__init__()
+
+        self.dim = dim
+        self.dim_out = dim_out
+        self.window_size = window_size
+
+        self.q = nn.Linear(dim, dim_out)
+        self.kv = nn.Linear(dim, 2 * dim_out)
+        self.proj = nn.Linear(dim_out, dim_out)
+        self.heads = 1 * (2 ** index)
+        self.head_dim = self.dim_out // self.heads
+
+        self.use_mask_unit_attn = [True, True, True, False][index]
+
+
+    def forward(self, q: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
+        """ Input should be of shape [batch, tokens, channels]. """
+        B, N, _ = q.shape
+        num_windows = (
+            (N // self.window_size if self.use_mask_unit_attn else 1)
+        )
+
+        q = (self.q(q)
+            .reshape(B, -1, num_windows, 1, self.heads, self.head_dim)
+            .permute(3, 0, 4, 2, 1, 5)
+        )
+
+        kv = (
+            self.kv(kv)
+            .reshape(B, -1, num_windows, 2, self.heads, self.head_dim)
+            .permute(3, 0, 4, 2, 1, 5)
+        )
+
+        q = q[0]
+        k, v = kv[0], kv[1]
+
+        if hasattr(F, "scaled_dot_product_attention"):
+            # Note: the original paper did *not* use SDPA, it's a free boost!
+            x = F.scaled_dot_product_attention(q, k, v)
+        else:
+            attn = (q * self.scale) @ k.transpose(-1, -2)
+            attn = attn.softmax(dim=-1)
+            x = (attn @ v)
+
+        x = x.transpose(1, 3).reshape(B, -1, self.dim_out)
+        x = self.proj(x)
+        return x
 
 class Conv3x3(nn.Module):
     """ MLP using 3x3 convs that keeps spatial dims
@@ -275,6 +346,46 @@ class S2(nn.Module):
         return x, cls.permute(0, 3, 1, 2)
 
 
+class S3(nn.Module):
+    def __init__(self, dim, hdim, odim, index=None):
+        super().__init__()
+
+        self.dim = dim
+        self.hdim = hdim
+        self.odim = odim
+
+        self.classifier = nn.Conv2d(self.hdim, self.odim, kernel_size=3, stride=2, padding=1)
+
+        self.avg_pool = nn.AvgPool2d(2, stride=2)
+        self.max_pool = nn.MaxPool2d(2, stride=2)
+
+        self.ln = nn.LayerNorm(self.dim)
+        self.conv = nn.Conv2d(self.dim * 2, self.dim, kernel_size=3, stride=1, padding=1)
+
+
+    def forward(self, x):
+        x = self.ln(x)
+
+        b, h, w, c = x.shape
+
+        x = x.permute(0, 3, 1, 2)
+
+        xpool = self.avg_pool(x)
+        maxpool = self.max_pool(x)
+
+        pooled = checkerboard_tensors(xpool, maxpool)
+
+        x = torch.cat([x, pooled], dim=1)
+
+        x = self.conv(x)
+
+        classification = self.classifier(x)
+
+        return x, classification
+
+
+
+
 class D1(nn.Module):
     def __init__(self, dim, hdim, odim):
         super().__init__()
@@ -375,6 +486,142 @@ class D3(nn.Module):
 
         return x, cls.permute(0, 3, 1, 2)
 
+class D4(nn.Module):
+    def __init__(self, dim, hdim, odim, index=None):
+        super().__init__()
+
+        self.dim = dim
+        self.hdim = hdim
+        self.odim = odim
+
+        self.classifier = nn.Conv2d(self.hdim, self.odim, kernel_size=3, stride=2, padding=1)
+
+        self.avg_pool = nn.AvgPool2d(2, stride=2)
+        self.max_pool = nn.MaxPool2d(2, stride=2)
+
+        self.ln = nn.LayerNorm(self.dim)
+        self.conv = nn.Conv2d(self.dim * 2, self.dim, kernel_size=3, stride=1, padding=1)
+        self.conv_res = nn.Conv2d(self.dim * 2, self.dim * 2, kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x, res):
+        x = self.ln(x)
+        res = self.ln(res.permute(0, 2, 3, 1))
+
+        b, h, w, c = x.shape
+
+        x = x.permute(0, 3, 1, 2)
+        res = res.permute(0, 3, 1, 2)
+
+        avgpool = self.avg_pool(res)
+        maxpool = self.max_pool(x)
+
+        pooled = checkerboard_tensors(avgpool, maxpool)
+
+        x = torch.cat([x, pooled], dim=1)
+
+        x_res = self.conv_res(x)
+        x = self.conv(x)
+
+        classification = self.classifier(x)
+
+        return x, x_res, classification
+
+
+class New(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
+
+        self.merge = nn.Conv2d(2 * dim, dim, kernel_size=3, stride=1, padding=1)
+        self.norm1 = nn.LayerNorm(2 * dim)
+        self.gelu = nn.GELU()
+
+        self.res = nn.Conv2d(dim, dim * 2, kernel_size=3, stride=2, padding=1)
+        self.cur_cls = nn.Conv2d(dim, num_classes, kernel_size=3, stride=1, padding=1)
+        self.next_cls = nn.Conv2d(dim * 2, num_classes, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x, res):
+
+        assert x.shape == res.shape, f"x ({x.shape}) and res ({res.shape}) must have the same shape"
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        xres = torch.cat([x, res], dim=-1)
+        xres = self.norm1(xres)
+
+        xres = xres.reshape(b, -1, h, w)
+
+        merged = self.merge(xres)
+        merged = self.gelu(merged)
+
+        # res branch
+        res = self.res(merged)
+        res = self.gelu(res)
+
+        # x branch
+        cur_cls = self.cur_cls(merged)
+
+        next_cls = self.next_cls(res)
+        next_cls = next_cls
+
+        # Merged should go to "outs"
+        # Res should go to the next stage (and patch prediction stage)
+        # Cls should go to the patch prediction stage
+
+        res = res.flatten(2).permute(0, 2, 1)
+
+        return merged, res, cur_cls, next_cls
+
+
+class New2(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
+
+        self.merge = nn.Conv2d(2 * dim, dim, kernel_size=3, stride=1, padding=1)
+        self.norm1 = nn.LayerNorm(2 * dim)
+        self.gelu = nn.GELU()
+
+        self.res = nn.Conv2d(dim, dim * 2, kernel_size=3, stride=2, padding=1)
+        self.cur_cls = nn.Conv2d(dim, num_classes, kernel_size=3, stride=1, padding=1)
+        # self.next_cls = nn.Linear(dim * 2, num_classes)
+
+    def forward(self, x, res):
+
+        assert x.shape == res.shape, f"x ({x.shape}) and res ({res.shape}) must have the same shape"
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        xres = torch.cat([x, res], dim=-1)
+        xres = self.norm1(xres)
+
+        xres = xres.reshape(b, -1, h, w)
+
+        merged = self.merge(xres)
+        merged = self.gelu(merged)
+
+        # res branch
+        res = self.res(merged)
+        res = self.gelu(res)
+
+        # x branch
+        cur_cls = self.cur_cls(merged)
+
+        #next_cls = self.next_cls(res.permute(0, 2, 3, 1))
+        #next_cls = next_cls.reshape(b, -1, h // 2, w // 2)
+
+        # Merged should go to "outs"
+        # Res should go to the next stage (and patch prediction stage)
+        # Cls should go to the patch prediction stage
+
+        res = res.flatten(2).permute(0, 2, 1)
+
+        return merged, res, cur_cls, None
+
+
+
 
 
 class PatchClassifier(nn.Module):
@@ -382,16 +629,24 @@ class PatchClassifier(nn.Module):
         super().__init__()
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
-        self.patch_classifiers = nn.ModuleList([S2(enc, enc, self.num_classes) for enc in self.encoder_channels])
 
-    def forward(self, x, idx):
-        return self.patch_classifiers[idx](x)
+        if self.num_classes == 2:
+            self.num_classes = 1
+
+        self.patch_classifiers = nn.ModuleList([New(enc, self.num_classes) for enc in self.encoder_channels])
+
+    def forward(self, x, res, idx):
+        return self.patch_classifiers[idx](x, res)
 
 class DualPatchClassifier(nn.Module):
     def __init__(self, encoder_channels, num_patch_classes):
         super().__init__()
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
+
+        if self.num_classes == 2:
+            self.num_classes = 1
+
         self.patch_classifiers = nn.ModuleList([S2(enc, enc, self.num_classes) if self.encoder_channels.index(enc) == 0 else D3(enc, enc, self.num_classes) for enc in self.encoder_channels])
 
     def forward(self, x, res, idx):

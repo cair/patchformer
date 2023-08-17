@@ -10,7 +10,7 @@ from losses.dice import DiceLoss
 from statistics import mean
 
 
-class DCSwinLightning(L.LightningModule):
+class NewFormerLightning(L.LightningModule):
 
     def __init__(self, model: torch.nn.Module,
                  train_loader: torch.utils.data.DataLoader,
@@ -35,10 +35,8 @@ class DCSwinLightning(L.LightningModule):
         self.dual = dual
 
         # Hacky but works
-        if patch_learning:
-            self.model.backbone.patch_classifier = get_patch_classifier(self.model.backbone.encs, self.num_classes + 1, dual=dual)
-
-        self.patch_sizes = [4, 8, 16, 32]
+        #if patch_learning:
+        #    self.model.backbone.patch_classifier = get_patch_classifier(self.model.backbone.encs, self.num_classes + 1, dual=dual)
 
         # Training metrics
         self.train_iou = list()
@@ -57,12 +55,9 @@ class DCSwinLightning(L.LightningModule):
 
     def forward(self, x, mask=None):
 
-        if self.patch_learning:
-            xs, patch_loss = self.model.backbone.patch_forward(x, mask)
-        else:
-            xs, patch_loss = self.model.backbone(x, mask)
+        x, patch_loss = self.model(x)
 
-        return patch_loss, self.model.decoder(*xs)
+        return patch_loss, x
 
     def calculate_metrics(self, logits, mask, step_type="train"):
         prediction = F.softmax(logits, dim=1).argmax(dim=1)
@@ -181,5 +176,5 @@ class DCSwinLightning(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=15, eta_min=5e-7, verbose=True)
-        return [optimizer] , [scheduler]
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=2, eta_min=5e-7, verbose=True)
+        return [optimizer]#  , [scheduler]

@@ -562,6 +562,8 @@ class Hiera(nn.Module):
         cur_stage = 0
         self.blocks = nn.ModuleList()
 
+        print("depth:", depth)
+
         for i in range(depth):
             dim_out = embed_dim
             # Mask unit or global attention.
@@ -575,6 +577,8 @@ class Hiera(nn.Module):
                 cur_stage += 1
                 if i in q_pool_blocks:
                     flat_mu_size //= flat_q_stride
+
+            print("flat_mu_size:", flat_mu_size)
 
             block = HieraBlock(
                 dim=embed_dim,
@@ -590,6 +594,8 @@ class Hiera(nn.Module):
 
             embed_dim = dim_out
             self.blocks.append(block)
+
+        exit("")
 
         self.norm = norm_layer(embed_dim)
         self.head = Head(embed_dim, num_classes, dropout_rate=head_dropout)

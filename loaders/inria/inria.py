@@ -71,6 +71,9 @@ class InriaDataset(Dataset):
         if self.split != None:
             self.img_ids = self.get_split()
 
+        #if split is None:
+        #    self.img_ids = self.img_ids[:int(len(self.img_ids) * 0.2)]
+
 
     def get_split(self):
         # First split the filenames using "_"

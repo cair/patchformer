@@ -312,9 +312,10 @@ BatchNorm2d = SynchronizedBatchNorm2d
 
 # upernet
 class UPerNet(nn.Module):
-    def __init__(self, num_class=150, fc_dim=4096,
+    def __init__(self, num_class=150, fc_dim=384,
                  use_softmax=False, pool_scales=(1, 2, 3, 6),
-                 fpn_inplanes=(256, 512, 1024, 2048), fpn_dim=256):
+                 fpn_inplanes=(384, 384, 384, 384), fpn_dim=256,
+                 upscale=8):
         super(UPerNet, self).__init__()
         self.use_softmax = use_softmax
 
@@ -355,6 +356,10 @@ class UPerNet(nn.Module):
             nn.Conv2d(fpn_dim, num_class, kernel_size=1)
         )
 
+        self.conv_transpose = nn.ConvTranspose2d(len(fpn_inplanes) * fpn_dim, fpn_dim,
+                                                 kernel_size=upscale,
+                                                 stride=upscale)
+
     def forward(self, conv_out, segSize=None):
         conv5 = conv_out[-1]
 
@@ -388,6 +393,11 @@ class UPerNet(nn.Module):
                 output_size,
                 mode='bilinear', align_corners=False))
         fusion_out = torch.cat(fusion_list, 1)
+
+        #fusion_out = self.conv_transpose(fusion_out)
+
+        fusion_out = torch.nn.functional.interpolate(fusion_out, scale_factor=16, mode='bilinear', align_corners=False)
+
         x = self.conv_last(fusion_out)
 
         if self.use_softmax:  # is True during inference
@@ -396,6 +406,6 @@ class UPerNet(nn.Module):
             x = nn.functional.softmax(x, dim=1)
             return x
 
-        x = nn.functional.log_softmax(x, dim=1)
+        # x = nn.functional.log_softmax(x, dim=1)
 
         return x

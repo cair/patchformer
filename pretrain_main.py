@@ -37,7 +37,6 @@ def parse_args():
 
 
 def get_logger(wandb: bool, project: str, name: str, model: L.LightningModule):
-
     # Create default logger (CSVLogger)
     logger = CSVLogger("lightning_logs", name)
     loggers = [logger]
@@ -52,7 +51,6 @@ def get_logger(wandb: bool, project: str, name: str, model: L.LightningModule):
 
 
 def get_callbacks(project, name):
-
     config = {}
 
     config["save_top_k"] = 1
@@ -90,45 +88,49 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
 def main():
     args = parse_args()
 
     if args.name == "":
         args.name = input("Please enter a name for this run: ")
 
-    seed_everything(args.seed) # 12 used, 5 used, 46
+    seed_everything(args.seed)  # 12 used, 5 used, 46
 
     train_dataset, val_dataset = get_datasets(args.dataset, args.image_size, args.split)
     train_loader, val_loader = get_loader(train_dataset, args.batch_size, True, 4), get_loader(val_dataset, 1, False, 4)
-    
+
     num_classes = train_dataset.num_classes
 
-    model = get_model(args.model, args.model_size, num_classes, args.binary, input_size=(args.image_size, args.image_size))
+    model = get_model(args.model, args.model_size, num_classes, args.binary,
+                      input_size=(args.image_size, args.image_size))
 
     if args.model == "dcswin":
-        lm = DCSwinLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
+        lm = DCSwinLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate,
+                             patch_learning=args.patch_learning, dual=args.dual)
     elif args.model == "hiera":
-        lm = HieraLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
+        lm = HieraLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate,
+                            patch_learning=args.patch_learning, dual=args.dual)
     elif args.model == "dino":
-        lm = ViTLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
+        lm = ViTLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate,
+                          patch_learning=args.patch_learning, dual=args.dual)
     elif args.model == "newformer":
-        lm = NewFormerLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate, patch_learning=args.patch_learning, dual=args.dual)
+        lm = NewFormerLightning(model, train_loader, val_loader, num_classes, learning_rate=args.learning_rate,
+                                patch_learning=args.patch_learning, dual=args.dual)
     else:
         raise NotImplementedError
 
-
     project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}"
 
-    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_split{args.split}_seed{args.seed}", lm)
+    loggers = get_logger(args.wandb, project_name,
+                         args.name + f"_{args.learning_rate}_split{args.split}_seed{args.seed}", lm)
     callbacks = get_callbacks(project_name, args.name)
 
-    trainer = L.Trainer(max_epochs=args.epochs, accelerator="gpu", devices=[args.gpu], logger=loggers, callbacks=callbacks)
+    trainer = L.Trainer(max_epochs=args.epochs, accelerator="gpu", devices=[args.gpu], logger=loggers,
+                        callbacks=callbacks)
 
     trainer.fit(model=lm)
 
 
-
-
 if __name__ == "__main__":
-
     main()

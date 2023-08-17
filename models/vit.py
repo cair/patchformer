@@ -666,6 +666,8 @@ class DinoVisionTransformer(nn.Module):
 
         patch_losses = torch.zeros((4,), device=x.device)
 
+        outs = []
+
         if mask is not None:
             mask = patchify_mask(mask, self.patch_size)
 
@@ -673,12 +675,12 @@ class DinoVisionTransformer(nn.Module):
             x = blk[i](x)
             if i in [2, 5, 8, 11]:
                 # Perform patch loss here
-                no_token_x = x[:, :-1]
-                token = x[:, -1]
+                no_token_x = x[:, 1:]
 
                 H = W = int(math.sqrt(no_token_x.shape[1]))
 
                 patch_x = no_token_x.view(-1, H, W, self.num_features).permute(0, 3, 1, 2).contiguous()
+                outs.append(patch_x)
 
                 out_index = self.out_indices.index(i)
 
@@ -704,7 +706,7 @@ class DinoVisionTransformer(nn.Module):
                 loss = dice_loss(xi, pmask)
                 patch_losses[out_index] = loss
 
-        return x, patch_losses
+        return outs, patch_losses
 
     def interpolate_pos_encoding(self, x, w, h):
         previous_dtype = x.dtype
@@ -788,15 +790,12 @@ class DinoVisionTransformer(nn.Module):
 
         x = self.prepare_tokens_with_masks(x, masks=None)
 
-        print(x.shape)
-
         x, patch_losses = self.forward_blocks(x, mask)
 
-        x = self.norm(x)
+        for xidx, xi in enumerate(x):
+            x[xidx] = self.norm(xi.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
 
         return x, patch_losses
-
-        exit("")
 
     def _get_intermediate_layers_not_chunked(self, x, n=1):
         x = self.prepare_tokens_with_masks(x)
@@ -870,9 +869,9 @@ class DinoUPerNet(nn.Module):
 
     def forward(self, x, mask=None):
         x, pl = self.backbone(x, mask)
-        # TODO: Decoder does not handle input correctly. Need to fix
         x = self.decoder(x)
-        return pl, x
+
+        return x, pl
 
 
 def init_weights_vit_timm(module: nn.Module, name: str = ""):
@@ -893,7 +892,7 @@ def vit_small(patch_size=16, num_classes=6, **kwargs):
         **kwargs,
     )
 
-    decoder = UPerNet(num_classes)
+    decoder = UPerNet(num_classes, upscale=patch_size)
 
     model = DinoUPerNet(backbone, decoder)
 
