@@ -32,18 +32,22 @@ def parse_args():
     parser.add_argument("-dual", "--dual", type=bool, default=False, help="Use dual attention")
     parser.add_argument("-split", "--split", type=int, default=None, help="Use a split of the dataset")
     parser.add_argument("-seed", "--seed", type=int, default=12, help="Seed for reproducibility")
+    parser.add_argument("-g", "--group", type=str, default=None, help="Group for wandb")
 
     return parser.parse_args()
 
 
-def get_logger(wandb: bool, project: str, name: str, model: L.LightningModule):
+def get_logger(wandb: bool, project: str, name: str, group: str, model: L.LightningModule):
 
     # Create default logger (CSVLogger)
     logger = CSVLogger("lightning_logs", name)
     loggers = [logger]
 
     if wandb:
-        wandblogger = WandbLogger(name=name, project=project)
+        if group is not None:
+            wandblogger = WandbLogger(name=name, project=project, group=group)
+        else:
+            wandblogger = WandbLogger(name=name, project=project)
         wandblogger.watch(model, log_graph=False)
         # wandblogger.experiment.config.update(config)
         loggers.append(wandblogger)
@@ -119,7 +123,7 @@ def main():
 
     project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}"
 
-    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_split{args.split}_seed{args.seed}", lm)
+    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_split{args.split}_seed{args.seed}", args.group, lm)
     callbacks = get_callbacks(project_name, args.name)
 
     trainer = L.Trainer(max_epochs=args.epochs, accelerator="gpu", devices=[args.gpu], logger=loggers, callbacks=callbacks)

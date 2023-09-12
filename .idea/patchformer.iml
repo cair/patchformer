@@ -3,9 +3,7 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/data" />
-      <excludeFolder url="file://$MODULE_DIR$/lightning_logs" />
-      <excludeFolder url="file://$MODULE_DIR$/pretrained_weights" />
-      <excludeFolder url="file://$MODULE_DIR$/wandb" />
+      <excludeFolder url="file://$MODULE_DIR$/old" />
     </content>
     <orderEntry type="jdk" jdkName="patchformer" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

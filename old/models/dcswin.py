@@ -16,8 +16,8 @@ from models.query_attention import Attention as QueryAttention
 from losses.dice import DiceLoss
 from utils.metric_utils import acc_pytorch as acc
 
-patch_loss_fn = DiceLoss(mode="multiclass")
-#patch_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.2)
+# patch_loss_fn = DiceLoss(mode="multiclass")
+patch_loss_fn = torch.nn.CrossEntropyLoss()
 
 class MaxPoolLayer(nn.Sequential):
     def __init__(self, kernel_size=3, dilation=1, stride=1):
@@ -757,18 +757,8 @@ class SwinTransformer(nn.Module):
                 out_index = self.out_indices.index(i)
                 # Reshape so that it fits into the patch classifier (B, C, H, W)
 
-                #if isinstance(self.patch_classifier, PatchClassifier):
+
                 out, res, cur_cls, next_cls = self.patch_classifier(x_out, res, out_index)
-                """
-                else:
-                    outs = self.patch_classifier(x_out.permute(0, 2, 3, 1), res, out_index)
-                    outs = list(outs)
-                    if len(outs) == 3:
-                        out, res, xi = outs
-                    else:
-                        out, xi = outs
-                        res = out
-                """
 
                 out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
 
@@ -790,27 +780,6 @@ class SwinTransformer(nn.Module):
                     else:
                         patch_losses[out_index] = cur_loss
 
-                """                    
-                if mask is not None and out_index != len(self.patch_sizes) - 1:
-                    if self.num_patch_classes == 2:
-                        xi = F.sigmoid(xi)
-                    else:
-                        xi = F.softmax(xi, dim=-1)
-
-                    pmask = patchify_mask(mask, self.patch_sizes[out_index + 1])
-
-                    if self.num_patch_classes == 2:
-                        xi = torch.cat([1 - xi, xi], dim=1)
-                        pmask = check_homogeneity_binary(pmask, -1)
-                    else:
-                        pmask = check_homogeneity_classes(pmask, self.num_patch_classes - 1, -1)
-                        # pmask = check_homogeneity_binary(pmask, -1)
-                        # pmask = check_homogeneity_classes_no_extra_class(pmask, self.num_patch_classes - 1, -1)
-
-                    loss = dice_loss(xi, pmask)
-                    patch_losses[out_index] = loss
-                """
-
                 outs.append(out)
 
         if mask is not None:
@@ -818,7 +787,7 @@ class SwinTransformer(nn.Module):
 
         return tuple(outs), None
 
-    def forward(self, x, mask=None):
+    def forward(self, x):
         """Forward function."""
         x = self.patch_embed(x)
         # print('patch_embed', x.size())
@@ -834,8 +803,6 @@ class SwinTransformer(nn.Module):
 
         outs = []
 
-        patch_losses = None
-
         for i in range(self.num_layers):
             layer = self.layers[i]
 
@@ -848,264 +815,15 @@ class SwinTransformer(nn.Module):
 
                 out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
                 outs.append(out)
-
-        return tuple(outs), patch_losses
-
-
-    def train(self, mode=True):
-        """Convert the models into training mode while keep layers freezed."""
-        super(SwinTransformer, self).train(mode)
-        self._freeze_stages()
-
-
-class SwinTransformerAllLayers(nn.Module):
-    """ Swin Transformer backbone.
-        A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
-          https://arxiv.org/pdf/2103.14030
-
-    Args:
-        pretrain_img_size (int): Input image size for training the pretrained models,
-            used in absolute postion embedding. Default 224.
-        patch_size (int | tuple(int)): Patch size. Default: 4.
-        in_chans (int): Number of input image channels. Default: 3.
-        embed_dim (int): Number of linear projection output channels. Default: 96.
-        depths (tuple[int]): Depths of each Swin Transformer stage.
-        num_heads (tuple[int]): Number of attention head of each stage.
-        window_size (int): Window size. Default: 7.
-        mlp_ratio (float): Ratio of mlp hidden dim to embedding dim. Default: 4.
-        qkv_bias (bool): If True, add a learnable bias to query, key, value. Default: True
-        qk_scale (float): Override default qk scale of head_dim ** -0.5 if set.
-        drop_rate (float): Dropout rate.
-        attn_drop_rate (float): Attention dropout rate. Default: 0.
-        drop_path_rate (float): Stochastic depth rate. Default: 0.2.
-        norm_layer (nn.Module): Normalization layer. Default: nn.LayerNorm.
-        ape (bool): If True, add absolute position embedding to the patch embedding. Default: False.
-        patch_norm (bool): If True, add normalization after patch embedding. Default: True.
-        out_indices (Sequence[int]): Output from which stages.
-        frozen_stages (int): Stages to be frozen (stop grad and set eval mode).
-            -1 means not freezing any parameters.
-        use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False.
-    """
-
-    def __init__(self,
-                 pretrain_img_size=224,
-                 patch_size=4,
-                 in_chans=3,
-                 embed_dim=128,
-                 depths=[2, 2, 18, 2],
-                 num_heads=[4, 8, 16, 32],
-                 window_size=7,
-                 mlp_ratio=4.,
-                 qkv_bias=True,
-                 qk_scale=None,
-                 drop_rate=0.,
-                 attn_drop_rate=0.,
-                 drop_path_rate=0.3,
-                 norm_layer=nn.LayerNorm,
-                 ape=False,
-                 patch_norm=True,
-                 out_indices=(0, 1, 2, 3),
-                 frozen_stages=-1,
-                 use_checkpoint=False,
-                 num_classes = 2):
-        super().__init__()
-
-        self.patch_sizes = [4, 8, 16, 32]
-        self.encs = [embed_dim * (2 ** i) for i in range(len(depths))]
-
-        self.num_patch_classes = num_classes + 1
-        # self.num_patch_classes = 2
-
-        self.patch_classifier = None
-
-        self.pretrain_img_size = pretrain_img_size
-        self.num_layers = len(depths)
-        self.embed_dim = embed_dim
-        self.ape = ape
-        self.patch_norm = patch_norm
-        self.out_indices = out_indices
-        self.frozen_stages = frozen_stages
-
-        # split image into non-overlapping patches
-        self.patch_embed = PatchEmbed(
-            patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
-            norm_layer=norm_layer if self.patch_norm else None)
-
-        # absolute position embedding
-        if self.ape:
-            pretrain_img_size = to_2tuple(pretrain_img_size)
-            patch_size = to_2tuple(patch_size)
-            patches_resolution = [pretrain_img_size[0] // patch_size[0], pretrain_img_size[1] // patch_size[1]]
-
-            self.absolute_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, patches_resolution[0], patches_resolution[1]))
-            trunc_normal_(self.absolute_pos_embed, std=.02)
-
-        self.pos_drop = nn.Dropout(p=drop_rate)
-
-        # stochastic depth
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
-
-        # build layers
-        self.layers = nn.ModuleList()
-        for i_layer in range(self.num_layers):
-            layer = BasicLayer(
-                dim=int(embed_dim * 2 ** i_layer),
-                depth=depths[i_layer],
-                num_heads=num_heads[i_layer],
-                window_size=window_size,
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                drop=drop_rate,
-                attn_drop=attn_drop_rate,
-                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
-                norm_layer=norm_layer,
-                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
-                use_checkpoint=use_checkpoint)
-            self.layers.append(layer)
-
-        num_features = [int(embed_dim * 2 ** i) for i in range(self.num_layers)]
-        self.num_features = num_features
-        self.apply(self._init_weights)
-
-        # add a norm layer for each output
-        for i_layer in out_indices:
-            layer = norm_layer(num_features[i_layer])
-            layer_name = f'norm{i_layer}'
-            self.add_module(layer_name, layer)
-
-        self._freeze_stages()
-
-    def _freeze_stages(self):
-        if self.frozen_stages >= 0:
-            self.patch_embed.eval()
-            for param in self.patch_embed.parameters():
-                param.requires_grad = False
-
-        if self.frozen_stages >= 1 and self.ape:
-            self.absolute_pos_embed.requires_grad = False
-
-        if self.frozen_stages >= 2:
-            self.pos_drop.eval()
-            for i in range(0, self.frozen_stages - 1):
-                m = self.layers[i]
-                m.eval()
-                for param in m.parameters():
-                    param.requires_grad = False
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-
-    def patch_forward(self, x, mask=None):
-        """Forward function."""
-        x = self.patch_embed(x)
-
-        Wh, Ww = x.size(2), x.size(3)
-        if self.ape:
-            # interpolate the position embedding to the corresponding size
-            absolute_pos_embed = F.interpolate(self.absolute_pos_embed, size=(Wh, Ww), mode='bicubic')
-            x = (x + absolute_pos_embed).flatten(2).transpose(1, 2)  # B Wh*Ww C
-        else:
-            x = x.flatten(2).transpose(1, 2)
-        x = self.pos_drop(x)
-
-        outs = []
-        patch_losses = torch.zeros((4,), device=x.device)
-
-        res = None
-
-        for i in range(self.num_layers):
-            layer = self.layers[i]
-
-            x_out, H, W, x, Wh, Ww = layer(x, Wh, Ww)
-
-            if i in self.out_indices:
-                norm_layer = getattr(self, f'norm{i}')
-
-                # Normalize the latent representation
-                x_out = norm_layer(x_out)
-
-                out_index = self.out_indices.index(i)
-                # Reshape so that it fits into the patch classifier (B, C, H, W)
-                out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
-
-                if isinstance(self.patch_classifier, PatchClassifier):
-                    _, xi = self.patch_classifier(out.permute(0, 2, 3, 1), out_index)
-                else:
-                    out, xi = self.patch_classifier(out.permute(0, 2, 3, 1), res, out_index)
-
-                res = out
-
-                if mask is not None:
-                    if self.num_patch_classes == 2:
-                        xi = F.sigmoid(xi)
-                    else:
-                        xi = F.softmax(xi, dim=-1)
-
-                    pmask = patchify_mask(mask, self.patch_sizes[out_index])
-
-                    if self.num_patch_classes == 2:
-                        xi = torch.cat([1 - xi, xi], dim=1)
-                        pmask = check_homogeneity_binary(pmask, -1)
-                    else:
-                        pmask = check_homogeneity_classes(pmask, self.num_patch_classes - 1, -1)
-                        # pmask = check_homogeneity_binary(pmask, -1)
-                        # pmask = check_homogeneity_classes_no_extra_class(pmask, self.num_patch_classes - 1, -1)
-
-                    loss = dice_loss(xi, pmask)
-                    patch_losses[out_index] = loss
-
-                outs.append(out)
-
-        if mask is not None:
-            return tuple(outs), patch_losses
 
         return tuple(outs), None
 
-    def forward(self, x, mask=None):
-        """Forward function."""
-        x = self.patch_embed(x)
-        # print('patch_embed', x.size())
-
-        Wh, Ww = x.size(2), x.size(3)
-        if self.ape:
-            # interpolate the position embedding to the corresponding size
-            absolute_pos_embed = F.interpolate(self.absolute_pos_embed, size=(Wh, Ww), mode='bicubic')
-            x = (x + absolute_pos_embed).flatten(2).transpose(1, 2)  # B Wh*Ww C
-        else:
-            x = x.flatten(2).transpose(1, 2)
-        x = self.pos_drop(x)
-
-        outs = []
-
-        patch_losses = None
-
-        for i in range(self.num_layers):
-            layer = self.layers[i]
-
-            x_out, H, W, x, Wh, Ww = layer(x, Wh, Ww)
-
-            if i in self.out_indices:
-                norm_layer = getattr(self, f'norm{i}')
-
-                x_out = norm_layer(x_out)
-
-                out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
-                outs.append(out)
-
-        return tuple(outs), patch_losses
-
 
     def train(self, mode=True):
         """Convert the models into training mode while keep layers freezed."""
         super(SwinTransformer, self).train(mode)
         self._freeze_stages()
+
 
 def l2_norm(x):
     return torch.einsum("bcn, bn->bcn", x, 1 / torch.norm(x, p=2, dim=-2))
@@ -1279,7 +997,7 @@ class DCSwin(nn.Module):
                  embed_dim=128,
                  depths=(2, 2, 18, 2),
                  num_heads=(4, 8, 16, 32),
-                 frozen_stages=2,
+                 frozen_stages=0,
                  binary=False):
         super(DCSwin, self).__init__()
         self.encoder_channels = encoder_channels
@@ -1327,7 +1045,7 @@ def dcswin_small(pretrained=True, num_classes=4, weight_path='pretrained_weights
     return model
 
 
-def dcswin_tiny(pretrained=False, num_classes=4, weight_path='pretrained_weights/dcswin/stseg_tiny.pth', binary=False):
+def dcswin_tiny(pretrained=True, num_classes=4, weight_path='pretrained_weights/dcswin/swin_tiny_patch4_window7_224_22k.pth', binary=False):
     model = DCSwin(encoder_channels=(96, 192, 384, 768),
                    num_classes=num_classes,
                    embed_dim=96,
@@ -1336,7 +1054,7 @@ def dcswin_tiny(pretrained=False, num_classes=4, weight_path='pretrained_weights
                    frozen_stages=0,
                    binary=binary)
     if pretrained and weight_path is not None:
-        old_dict = torch.load(weight_path)['state_dict']
+        old_dict = torch.load(weight_path)
         model_dict = model.state_dict()
         old_dict = {k: v for k, v in old_dict.items() if (k in model_dict)}
         model_dict.update(old_dict)

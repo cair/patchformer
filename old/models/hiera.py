@@ -34,13 +34,13 @@ from models.patch_classifier import PatchClassifier, DualPatchClassifier
 from models.dcswin import patchify_mask, check_homogeneity_classes, check_heterogeneity_binary
 from losses.dice import DiceLoss
 
-dice_loss = DiceLoss(mode="multiclass", ignore_index=7)
+patch_loss_fn = torch.nn.CrossEntropyLoss()
 
-def pretrained_model(checkpoints: Dict[str, str], default: str = None) -> Callable:
+def pretrained_model(checkpoints: Dict[str, str], default: str = None, input_size: Tuple = None) -> Callable:
     """ Loads a Hiera model from a pretrained source (if pretrained=True). Use "checkpoint" to specify the checkpoint. """
 
     def inner(model_func: Callable) -> Callable:
-        def model_def(pretrained: bool = False, checkpoint: str = default, strict: bool = True, **kwdargs) -> nn.Module:
+        def model_def(pretrained: bool = True, checkpoint: str = default, strict: bool = True, **kwdargs) -> nn.Module:
             if pretrained:
                 if checkpoints is None:
                     raise RuntimeError("This model currently doesn't have pretrained weights available.")
@@ -51,6 +51,14 @@ def pretrained_model(checkpoints: Dict[str, str], default: str = None) -> Callab
                         f"Invalid checkpoint specified ({checkpoint}). Options are: {list(checkpoints.keys())}.")
 
                 state_dict = torch.hub.load_state_dict_from_url(checkpoints[checkpoint], map_location="cpu")
+
+                if input_size is not None:
+                    print("interpolating pos_embed")
+                    pos_embed = state_dict["model_state"]["pos_embed"]
+                    h = w = int(math.sqrt(pos_embed.shape[1]))
+                    pos_embed = pos_embed.reshape(1, h, w, -1).permute(0, 3, 1, 2)
+                    pos_embed = torch.nn.functional.interpolate(pos_embed, (input_size[0] // 4, input_size[1] // 4)).flatten(2).permute(0, 2, 1)
+                    state_dict["model_state"]["pos_embed"] = pos_embed
 
                 if "head.projection.weight" in state_dict["model_state"]:
                     # Set the number of classes equal to the state_dict only if the user doesn't want to overwrite it
@@ -562,8 +570,6 @@ class Hiera(nn.Module):
         cur_stage = 0
         self.blocks = nn.ModuleList()
 
-        print("depth:", depth)
-
         for i in range(depth):
             dim_out = embed_dim
             # Mask unit or global attention.
@@ -577,8 +583,6 @@ class Hiera(nn.Module):
                 cur_stage += 1
                 if i in q_pool_blocks:
                     flat_mu_size //= flat_q_stride
-
-            print("flat_mu_size:", flat_mu_size)
 
             block = HieraBlock(
                 dim=embed_dim,
@@ -594,8 +598,6 @@ class Hiera(nn.Module):
 
             embed_dim = dim_out
             self.blocks.append(block)
-
-        exit("")
 
         self.norm = norm_layer(embed_dim)
         self.head = Head(embed_dim, num_classes, dropout_rate=head_dropout)
@@ -673,7 +675,6 @@ class Hiera(nn.Module):
     def patch_forward(
         self,
         x: torch.Tensor,
-        patch_mask: torch.Tensor = None,
         mask: torch.Tensor = None,
         return_intermediates: bool = True,
     ) -> tuple[Any, Tensor] | Any:
@@ -701,46 +702,37 @@ class Hiera(nn.Module):
         #    )
 
         patch_losses = torch.zeros((4,), device=x.device)
-        res = None
-
+        res = x
         for i, blk in enumerate(self.blocks):
             x = blk(x)
 
             if return_intermediates and i in self.stage_ends:
                 intermediate = self.reroll(x, i, mask=None)
+
+                b, h, w, c = intermediate.shape
+
                 out_index = self.stage_ends.index(i)
-                intermediate = intermediate.permute(0, 3, 1, 2)
 
-                if isinstance(self.patch_classifier, PatchClassifier):
-                    _, xi = self.patch_classifier(intermediate.permute(0, 2, 3, 1), out_index)
-                else:
-                    intermediate, xi = self.patch_classifier(intermediate.permute(0, 2, 3, 1), res, out_index)
+                out, res, cur_cls, _ = self.patch_classifier(intermediate.flatten(1, 2), res, out_index)
 
-                res = intermediate
+                out = out.view(-1, h, w, self.encs[out_index]).permute(0, 3, 1, 2).contiguous()
 
-                if self.num_patch_classes == 2:
-                    xi = F.sigmoid(xi)
-                else:
-                    xi = F.softmax(xi, dim=-1)
+                if mask is not None:
+                    cur_cls = F.softmax(cur_cls, dim=1)
+                    cur_mask = patchify_mask(mask, self.patch_sizes[out_index])
+                    cur_mask = check_homogeneity_classes(cur_mask, self.num_patch_classes - 1, -1)
 
-                if patch_mask is not None:
-                    pmask = patchify_mask(patch_mask, self.patch_sizes[out_index])
+                    cur_loss = patch_loss_fn(cur_cls, cur_mask)
+                    patch_losses[out_index] = cur_loss
 
-                    if self.num_patch_classes == 2:
-                        xi = torch.cat([1 - xi, xi], dim=-1)
-                        pmask = check_heterogeneity_binary(pmask, -1)
-                    else:
-                        pmask = check_homogeneity_classes(pmask, self.num_patch_classes - 1, -1)
+                # out = intermediate.permute(0, 3, 1, 2)
 
-                    loss = dice_loss(xi, pmask)
-                    patch_losses[out_index] = loss
+                intermediates.append(out)
 
-                intermediates.append(intermediate)
-
-        if mask is None:
-            x = x.mean(dim=1)
-            x = self.norm(x)
-            x = self.head(x)
+        #if mask is None:
+        #    x = x.mean(dim=1)
+        #    x = self.norm(x)
+        #    x = self.head(x)
 
         # x may not always be in spatial order here.
         # e.g. if q_pool = 2, mask_unit_size = (8, 8), and
@@ -810,8 +802,6 @@ class Hiera(nn.Module):
         if return_intermediates:
             return x, torch.tensor([0.], device=x.device)
 
-        seg = self.segment(intermediates)
-
         return x
 
 
@@ -823,6 +813,28 @@ class Hiera(nn.Module):
 }, default="mae_in1k")
 def hiera_tiny_224(**kwdargs):
     return Hiera(embed_dim=96, num_heads=1, stages=(1, 2, 7, 2), **kwdargs)
+
+@pretrained_model({
+    "mae_in1k_ft_in1k": "https://dl.fbaipublicfiles.com/hiera/hiera_tiny_224.pth",
+    "mae_in1k": "https://dl.fbaipublicfiles.com/hiera/mae_hiera_tiny_224.pth",
+}, default="mae_in1k", input_size=(256, 256))
+def hiera_tiny_256(**kwdargs):
+    return Hiera(embed_dim=96, num_heads=1, stages=(1, 2, 7, 2), **kwdargs)
+
+@pretrained_model({
+    "mae_in1k_ft_in1k": "https://dl.fbaipublicfiles.com/hiera/hiera_tiny_224.pth",
+    "mae_in1k": "https://dl.fbaipublicfiles.com/hiera/mae_hiera_tiny_224.pth",
+}, default="mae_in1k", input_size=(512, 512))
+def hiera_tiny_512(**kwdargs):
+    return Hiera(embed_dim=96, num_heads=1, stages=(1, 2, 7, 2), **kwdargs)
+
+def hiera_tiny(num_classes, input_size):
+    if input_size[0] == 256:
+        return hiera_tiny_256(num_classes=num_classes, input_size=input_size)
+    elif input_size[0] == 512:
+        return hiera_tiny_512(num_classes=num_classes, input_size=input_size)
+    else:
+        raise ValueError("Invalid input size for hiera_tiny")
 
 
 @pretrained_model({
@@ -840,6 +852,29 @@ def hiera_small_224(**kwdargs):
 def hiera_base_224(**kwdargs):
     return Hiera(embed_dim=96, num_heads=1, stages=(2, 3, 16, 3), **kwdargs)
 
+
+@pretrained_model({
+    "mae_in1k_ft_in1k": "https://dl.fbaipublicfiles.com/hiera/hiera_base_224.pth",
+    "mae_in1k": "https://dl.fbaipublicfiles.com/hiera/mae_hiera_base_224.pth",
+}, default="mae_in1k", input_size=(256, 256))
+def hiera_base_256(**kwdargs):
+    return Hiera(embed_dim=96, num_heads=1, stages=(2, 3, 16, 3), **kwdargs)
+
+
+@pretrained_model({
+    "mae_in1k_ft_in1k": "https://dl.fbaipublicfiles.com/hiera/hiera_base_224.pth",
+    "mae_in1k": "https://dl.fbaipublicfiles.com/hiera/mae_hiera_base_224.pth",
+}, default="mae_in1k", input_size=(512, 512))
+def hiera_base_512(**kwdargs):
+    return Hiera(embed_dim=96, num_heads=1, stages=(2, 3, 16, 3), **kwdargs)
+
+def hiera_base(num_classes, input_size):
+    if input_size[0] == 256:
+        return hiera_base_256(num_classes=num_classes, input_size=input_size)
+    elif input_size[0] == 512:
+        return hiera_base_512(num_classes=num_classes, input_size=input_size)
+    else:
+        raise ValueError("Invalid input size for hiera_tiny")
 
 @pretrained_model({
     "mae_in1k_ft_in1k": "https://dl.fbaipublicfiles.com/hiera/hiera_base_plus_224.pth",

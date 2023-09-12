@@ -621,7 +621,231 @@ class New2(nn.Module):
         return merged, res, cur_cls, None
 
 
+class NewSplit(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
 
+        self.x_conv = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1)
+        self.res_conv = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1)
+        self.x_norm = nn.LayerNorm(dim)
+        self.res_norm = nn.LayerNorm(dim)
+        self.gelu = nn.GELU()
+
+        self.x = nn.Conv2d(dim, dim * 2, kernel_size=3, stride=2, padding=1)
+        self.xres = nn.Conv2d(dim * 2, dim, kernel_size=3, stride=1, padding=1)
+        self.cur_cls = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1)
+        self.next_cls = nn.Conv2d(dim * 2, dim, kernel_size=3, stride=1, padding=1)
+        #self.cur_cls = nn.Conv2d(dim, num_classes, kernel_size=3, stride=1, padding=1)
+        #self.next_cls = nn.Conv2d(dim * 2, num_classes, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x, res):
+
+        assert x.shape == res.shape, f"x ({x.shape}) and res ({res.shape}) must have the same shape"
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        x = self.x_norm(x).reshape(b, -1, h, w)
+        res = self.res_norm(res).reshape(b, -1, h, w)
+
+        # x : b, c, h, w
+        # res: b, c, h, w
+
+        x = self.gelu(self.x_conv(x))
+        res = self.gelu(self.res_conv(res))
+
+        xres = torch.cat([x, res], dim=1)
+
+        x = self.x(x)
+        xres = self.xres(xres)
+
+        # x branch
+        cur_cls = self.cur_cls(xres)
+        next_cls = self.next_cls(x)
+
+        # xres should go to "outs"
+        # x should go to the next stage (and patch prediction stage)
+        # Cls should go to the patch prediction stage
+
+        xres = xres.flatten(2).permute(0, 2, 1)
+        x = x.flatten(2).permute(0, 2, 1)
+
+        return xres, x, cur_cls, next_cls
+
+
+class NewSplit2(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
+
+        self.x_conv = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1)
+        self.res_conv = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1)
+        self.x_norm = nn.LayerNorm(dim)
+        self.res_norm = nn.LayerNorm(dim)
+        self.gelu = nn.GELU()
+
+        self.x = nn.Conv2d(dim, dim * 2, kernel_size=3, stride=2, padding=1)
+        self.xres = nn.Conv2d(dim * 2, dim, kernel_size=3, stride=1, padding=1)
+        self.cur_cls = nn.Conv2d(dim, num_classes, kernel_size=3, stride=1, padding=1)
+        # self.next_cls = nn.Conv2d(dim * 2, num_classes, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x, res):
+
+        assert x.shape == res.shape, f"x ({x.shape}) and res ({res.shape}) must have the same shape"
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        x = self.x_norm(x).reshape(b, -1, h, w)
+        res = self.res_norm(res).reshape(b, -1, h, w)
+
+        # x : b, c, h, w
+        # res: b, c, h, w
+
+        x = self.gelu(self.x_conv(x))
+        res = self.gelu(self.res_conv(res))
+
+        xres = torch.cat([x, res], dim=1)
+
+        x = self.x(x)
+        xres = self.xres(xres)
+
+        # x branch
+        cur_cls = self.cur_cls(xres)
+
+        # next_cls = self.next_cls(x)
+
+        # xres should go to "outs"
+        # x should go to the next stage (and patch prediction stage)
+        # Cls should go to the patch prediction stage
+
+        xres = xres.flatten(2).permute(0, 2, 1)
+        x = x.flatten(2).permute(0, 2, 1)
+
+        return xres, x, cur_cls, None
+
+class NewSmall(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
+
+        self.x_norm = nn.LayerNorm(dim)
+        self.res_norm = nn.LayerNorm(dim)
+        self.gelu = nn.GELU()
+
+        self.down = nn.Linear(dim, dim // 2)
+
+        self.cls = nn.Linear(dim, num_classes)
+        # self.next_cls = nn.Linear(dim * 2, num_classes)
+
+        self.res = nn.Conv2d(dim, dim * 2, kernel_size=3, stride=2, padding=1)
+
+        self.out_norm = nn.LayerNorm(dim)
+
+
+    def forward(self, x, res):
+
+        assert x.shape == res.shape, f"x ({x.shape}) and res ({res.shape}) must have the same shape"
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        x = self.x_norm(x).reshape(b, h, w, -1)
+        res = self.res_norm(res).reshape(b, h, w, -1)
+
+        x = self.down(x)
+        res = self.down(res)
+
+        x = self.gelu(x)
+        res = self.gelu(res)
+
+        catted = torch.cat([x, res], dim=-1)
+
+        cur_cls = self.cls(catted)
+
+        catted = catted.permute(0, 3, 1, 2)
+
+        res = self.res(catted)
+        res = self.gelu(res)
+        # next_cls = self.next_cls(res.permute(0, 2, 3, 1))
+
+        catted = catted.flatten(2).permute(0, 2, 1)
+        res = res.flatten(2).permute(0, 2, 1)
+
+        cur_cls = cur_cls.permute(0, 3, 1, 2)
+        # next_cls = next_cls.permute(0, 3, 1, 2)
+
+        catted = self.out_norm(catted)
+
+        return catted, res, cur_cls, None
+
+class PatchResidual(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
+
+        self.dim = dim
+        self.num_classes = num_classes
+
+        self.xnorm = nn.BatchNorm2d(dim)
+        self.resnorm = nn.BatchNorm2d(dim)
+        self.gelu = nn.GELU()
+
+        self.cur_cls = nn.Conv2d(self.dim * 2, self.num_classes, kernel_size=1, stride=1, padding=0)
+
+        self.max_pool = nn.MaxPool2d(2, stride=2)
+        self.dim_up = nn.Conv2d(self.dim, self.dim * 2, kernel_size=1, stride=1)
+
+    def forward(self, x, res):
+
+        assert x.shape == res.shape, f"x ({x.shape}) and res ({res.shape}) must have the same shape"
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        x = x.reshape(b, h, w, -1).permute(0, 3, 1, 2)
+        res = res.reshape(b, h, w, -1).permute(0, 3, 1, 2)
+
+        x = self.xnorm(x)
+        res = self.resnorm(res)
+
+        catted = torch.cat([x, res], dim=1)
+
+        cur_cls = self.cur_cls(catted)
+
+        xres = self.max_pool(catted)
+
+        xres = xres.flatten(2).permute(0, 2, 1)
+
+        return catted, xres, cur_cls, None
+
+class PatchNonResidual(nn.Module):
+    def __init__(self, dim, num_classes):
+        super().__init__()
+
+        self.dim = dim
+        self.num_classes = num_classes
+
+        self.norm = nn.BatchNorm2d(dim)
+        self.gelu = nn.GELU()
+
+        self.mlp = nn.Linear(self.dim, self.dim)
+        self.cur_cls = nn.Conv2d(self.dim, self.num_classes, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x, res):
+
+        b, n, c = x.shape
+
+        h, w = int(n ** 0.5), int(n ** 0.5)
+
+        x = x.reshape(b, h, w, -1).permute(0, 3, 1, 2)
+
+        x = self.norm(x)
+
+        cur_cls = self.cur_cls(x)
+
+        return None, None, cur_cls, None
 
 
 class PatchClassifier(nn.Module):
@@ -630,10 +854,7 @@ class PatchClassifier(nn.Module):
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
 
-        if self.num_classes == 2:
-            self.num_classes = 1
-
-        self.patch_classifiers = nn.ModuleList([New(enc, self.num_classes) for enc in self.encoder_channels])
+        self.patch_classifiers = nn.ModuleList([PatchResidual(enc, self.num_classes) for enc in self.encoder_channels])
 
     def forward(self, x, res, idx):
         return self.patch_classifiers[idx](x, res)
@@ -643,9 +864,6 @@ class DualPatchClassifier(nn.Module):
         super().__init__()
         self.encoder_channels = encoder_channels
         self.num_classes = num_patch_classes
-
-        if self.num_classes == 2:
-            self.num_classes = 1
 
         self.patch_classifiers = nn.ModuleList([S2(enc, enc, self.num_classes) if self.encoder_channels.index(enc) == 0 else D3(enc, enc, self.num_classes) for enc in self.encoder_channels])
 
