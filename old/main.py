@@ -73,7 +73,6 @@ def get_callbacks(project, name):
         save_top_k=1,
         verbose=True,
         monitor="val_loss",
-        # mode=config["mode"],
         filename="{epoch:02d}-{val_loss:.2f}",
         dirpath=config["dirpath"]
     ))

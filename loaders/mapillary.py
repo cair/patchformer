@@ -9,14 +9,13 @@ from pathlib import Path
 from .transform import TrainingTransform, ValidationTransform
 
 NEW_IMAGE_SIZE = [384, 384] # (width, height) 4:3
-NUM_CLASSES = 150
+NEW_MASK_SIZE = [384, 384] # (width, height) 4:3
+NUM_CLASSES = 124
 
-class ADE20K(Dataset):
-    def __init__(self, root: str, type: str, percentage: float = 1.0, image_size: int = 384, image_suffix: str = "jpg", mask_suffix: str = "png", transform=None):
+class Mapillary(Dataset):
+    def __init__(self, root: str, type: str, percentage: float = 1.0, image_suffix: str = "png", mask_suffix: str = "png", transform=None):
         self.root = root
         self.dir = Path(root, type)
-        
-        self.image_size = image_size
         
         self.images = sorted(Path(self.dir, "images").glob(f"*.{image_suffix}"))
         self.masks = sorted(Path(self.dir, "masks").glob(f"*.{mask_suffix}"))
@@ -25,13 +24,12 @@ class ADE20K(Dataset):
             self.images = self.images[:int(len(self.images) * percentage)]
             self.masks = self.masks[:int(len(self.masks) * percentage)]
         
-        assert len(self.images) == len(self.masks), "Number of images and masks must be equal"
+        assert len(self.images) == len(self.masks), f"Number of images and masks must be equal, {len(self.images)} != {len(self.masks)}"
 
-        
-        self.transform = TrainingTransform([self.image_size, self.image_size], NUM_CLASSES) if type == "train" else ValidationTransform([self.image_size, self.image_size], NUM_CLASSES)
+        self.transform = TrainingTransform(NEW_IMAGE_SIZE, NUM_CLASSES) if type == "train" else ValidationTransform(NEW_IMAGE_SIZE, NUM_CLASSES)
         
         self.num_classes = NUM_CLASSES
-
+        
         
     def __len__(self):
         return len(self.images)
@@ -53,11 +51,10 @@ class ADE20K(Dataset):
         
         return image, mask
 
-
 if __name__ == "__main__":
     
-    train_dataset = ADE20K(root="data/coco_stuff", type="train", percentage=0.01)
-    val_dataset = ADE20K(root="data/coco_stuff", type="val", percentage=0.01)
+    train_dataset = Mapillary(root="data/coco_stuff", type="train", percentage=0.01)
+    val_dataset = Mapillary(root="data/coco_stuff", type="val", percentage=0.01)
     
     print("train:", len(train_dataset))
     print("val:", len(val_dataset))
@@ -66,5 +63,6 @@ if __name__ == "__main__":
     
       image, mask = train_dataset[i]
       image, mask = val_dataset[i]
+      print(image.shape, mask.shape)
       print(mask.unique())
     

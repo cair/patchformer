@@ -14,7 +14,8 @@ def conv3x3_bn_relu(in_planes, out_planes, stride=1):
 class UPerNet(nn.Module):
     def __init__(self, num_class=150, fc_dim=4096,
                  use_softmax=False, pool_scales=(1, 2, 3, 6),
-                 fpn_inplanes=(256, 512, 1024, 2048), fpn_dim=256):
+                 fpn_inplanes=(256, 512, 1024, 2048), fpn_dim=256,
+                 scale_factor=4):
         super(UPerNet, self).__init__()
         self.use_softmax = use_softmax
 
@@ -53,7 +54,7 @@ class UPerNet(nn.Module):
         self.conv_last = nn.Sequential(
             conv3x3_bn_relu(len(fpn_inplanes) * fpn_dim, fpn_dim, 1),
             nn.ConvTranspose2d(fpn_dim, fpn_dim, 4, 2, 1, bias=False),
-            nn.Upsample(scale_factor=8, mode="bilinear", align_corners=True),
+            nn.Upsample(scale_factor=scale_factor, mode="bilinear", align_corners=True),
             nn.Conv2d(fpn_dim, num_class, kernel_size=1)
         )
 

@@ -7,8 +7,10 @@ from pathlib import Path
 
 from PIL import Image
 
-NEW_IMAGE_SIZE = [224, 224] # (width, height) 4:3
-NEW_MASK_SIZE = [224, 224] # (width, height) 4:3
+from .transform import TrainingTransform, ValidationTransform
+
+NEW_IMAGE_SIZE = [384, 384] # (width, height) 4:3
+NUM_CLASSES = 182
 
 class COCOStuff(Dataset):
     def __init__(self, root: str, type: str, percentage: float = 1.0, image_suffix: str = "jpg", mask_suffix: str = "png", transform=None):
@@ -25,7 +27,9 @@ class COCOStuff(Dataset):
         assert len(self.images) == len(self.masks), "Number of images and masks must be equal"
 
         
-        self.transform = transform
+        self.transform = TrainingTransform(NEW_IMAGE_SIZE, NUM_CLASSES) if type == "train" else ValidationTransform(NEW_IMAGE_SIZE, NUM_CLASSES)
+        
+        self.num_classes = NUM_CLASSES
 
         
     def __len__(self):
@@ -41,23 +45,10 @@ class COCOStuff(Dataset):
         
         if image.mode in ["L", "P", "1"]:
             image = image.convert("RGB")
-                
-        image = torch.from_numpy(np.array(image)) # Not normalized and channels last
-        image = image / 255.0 # Normalized
         
-        mask = torch.from_numpy(np.array(mask))
+        image, mask = self.transform(image, mask)
         
-        image = image.unsqueeze(0).permute(0, 3, 1, 2)
-        mask = mask.unsqueeze(0).unsqueeze(0)
-        
-        # Both images must be resized
-        image = F.interpolate(image, size=NEW_IMAGE_SIZE, mode="bilinear", align_corners=False)
-        mask = F.interpolate(mask, size=NEW_MASK_SIZE, mode="nearest").long()
-        
-        image = image.squeeze(0)
-        mask = mask.squeeze(0).squeeze(0)
-        
-        mask[mask == 255] = 0
+        mask[mask == 255] = self.num_classes
         
         return image, mask
 
