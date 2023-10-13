@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from timm import create_model
 
-from utils import iou_pytorch as iou, acc_pytorch as acc, patchify_mask, check_homogeneity_classes, check_homogeneity_majority, check_homogeneity_proportions
+from utils import iou_pytorch as iou, acc_pytorch as acc, patchify_mask, check_homogeneity_classes, check_homogeneity_majority, compute_class_proportions
 from models.decoders.upernet import UPerNet
 from models.patch_classifiers.patch_classifier import HiearchicalPatchClassifier
 from losses.dice import DiceLoss
@@ -94,7 +94,7 @@ class SwinUperNet(L.LightningModule):
         
         if mask is not None:
             feature_mask = patchify_mask(mask, self.patch_sizes[0])
-            feature_mask = check_homogeneity_proportions(feature_mask, self.num_classes, -1)
+            feature_mask = compute_class_proportions(feature_mask, self.num_classes)
             feature_mask = feature_mask.permute(0, 3, 1, 2)
             patch_loss = F.cross_entropy(prediction, feature_mask)
         
@@ -106,8 +106,8 @@ class SwinUperNet(L.LightningModule):
     def calculate_metrics(self, logits, mask, step_type="train"):
         prediction = F.softmax(logits, dim=1).argmax(dim=1)
 
-        miou = iou(prediction, mask)
-        macc = acc(prediction, mask)
+        miou = iou(prediction, mask, self.num_classes)
+        macc = acc(prediction, mask, self.num_classes)
 
         if step_type == "train":
             self.train_iou.append(miou.item())

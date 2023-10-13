@@ -4,7 +4,9 @@ import lightning as L
 from loaders.loader import get_dataloader
 from lightning_models.vitupernet import ViTUperNet
 from lightning_models.swinupernet import SwinUperNet
-from lightning_models.mvitupernet import EfficientFormerUperNet
+from lightning_models.swindc import SwinDC
+from lightning_models.hieradc import HieraDC
+from lightning_models.hieraupernet import HieraUperNet
 from utils import get_callbacks, get_logger
 
 import argparse
@@ -66,8 +68,22 @@ def main():
                                     val_loader=val_loader,
                                     patch_learning=args.patch_learning,
                                     model_size=args.model_size)
-    elif args.model == "eff":
-        lightning_model = EfficientFormerUperNet(num_classes=num_classes,
+    elif args.model == "hiera":
+        lightning_model = HieraUperNet(num_classes=num_classes,
+                                      learning_rate=args.learning_rate,
+                                      train_loader=train_loader,
+                                      val_loader=val_loader,
+                                      patch_learning=args.patch_learning,
+                                      model_size=args.model_size)
+    elif args.model == "swindc":
+        lightning_model = SwinDC(num_classes=num_classes,
+                                      learning_rate=args.learning_rate,
+                                      train_loader=train_loader,
+                                      val_loader=val_loader,
+                                      patch_learning=args.patch_learning,
+                                      model_size=args.model_size)
+    elif args.model == "hieradc":
+        lightning_model = HieraDC(num_classes=num_classes,
                                       learning_rate=args.learning_rate,
                                       train_loader=train_loader,
                                       val_loader=val_loader,

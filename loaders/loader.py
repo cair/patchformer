@@ -1,9 +1,13 @@
 import torch
 from torch.utils.data import DataLoader
 
+from datasets import load_dataset
+
 from loaders.coco_stuff import COCOStuff
 from loaders.ade20k import ADE20K
-from loaders.mapillary import Mapillary
+from loaders.mapillary import Cityscapes
+from loaders.potsdam import Potsdam
+from loaders.mapai import MapAI
 
 def get_dataloader(dataset_name: str, 
                    dataset_type: str, 
@@ -18,8 +22,12 @@ def get_dataloader(dataset_name: str,
         dataset = COCOStuff(root="data/coco_stuff", type=dataset_type, percentage=percentage, image_size=image_size)
     elif dataset_name == "ade20k":
         dataset = ADE20K(root="data/ADEChallengeData2016", type=dataset_type, percentage=percentage, image_size=image_size)
-    elif dataset_name == "mapillary":
-        dataset = Mapillary(root="data/mapillary", type=dataset_type, percentage=percentage, image_size=image_size)
+    elif dataset_name == "cityscapes":
+        dataset = Cityscapes(root="data/cityscapes", type=dataset_type, percentage=percentage, image_size=image_size)
+    elif dataset_name == "potsdam":
+        dataset = Potsdam(root="data/potsdam", type=dataset_type, percentage=percentage, image_size=image_size)
+    elif dataset_name == "mapai":
+        dataset = MapAI(root="data/mapai", type=dataset_type, percentage=percentage, image_size=image_size)
     else:
         return NotImplementedError("Dataset not implemented")
     

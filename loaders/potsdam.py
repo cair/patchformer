@@ -8,20 +8,11 @@ from pathlib import Path
 
 from .transform import TrainingTransform, ValidationTransform
 
-NEW_IMAGE_SIZE = [384, 384] # (width, height) 4:3
-NUM_CLASSES = 150
+NEW_IMAGE_SIZE = [512, 512] # (width, height) 4:3
+NUM_CLASSES = 6
 
-
-def mask_convert(img):
-    if img.dtype != torch.uint8:
-        img = img.type(torch.uint8)
-    img = img - 1  # 0 (ignore) becomes 255. others are shifted by 1
-    img[img == 255] = NUM_CLASSES
-    return img
-
-
-class ADE20K(Dataset):
-    def __init__(self, root: str, type: str, percentage: float = 1.0, image_size: int = 384, image_suffix: str = "jpg", mask_suffix: str = "png", transform=None):
+class Potsdam(Dataset):
+    def __init__(self, root: str, type: str, percentage: float = 1.0, image_size: int = 384, image_suffix: str = "tif", mask_suffix: str = "png", transform=None):
         self.root = root
         self.dir = Path(root, type)
         
@@ -57,10 +48,6 @@ class ADE20K(Dataset):
             image = image.convert("RGB")
         
         image, mask = self.transform(image, mask)
-        
-        mask = mask_convert(mask)
-        
-        mask[mask == 255] = self.num_classes
         
         return image, mask
 

@@ -163,3 +163,4 @@ pretrained_weights
 lightning_logs
 data
 wandb
+pretrain_weights

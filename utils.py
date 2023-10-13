@@ -9,23 +9,38 @@ from datetime import datetime
 SMOOTH = 1e-6
 
 
-def iou_pytorch(outputs: torch.Tensor, labels: torch.Tensor):
+
+def iou_pytorch(outputs: torch.Tensor, labels: torch.Tensor, ignore: int = None):
+    SMOOTH = 1e-6
+
+    # If ignore parameter is provided, mask those values
+    if ignore is not None:
+        outputs = torch.where(outputs == ignore, torch.zeros_like(outputs), outputs)
+        labels = torch.where(labels == ignore, torch.zeros_like(labels), labels)
+
     # You can comment out this line if you are passing tensors of equal shape
     # But if you are passing output from UNet or something it will most probably
     # be with the BATCH x 1 x H x W shape
     outputs = outputs.squeeze(1)  # BATCH x 1 x H x W => BATCH x H x W
 
     intersection = (outputs & labels).float().sum((1, 2))  # Will be zero if Truth=0 or Prediction=0
-    union = (outputs | labels).float().sum((1, 2))  # Will be zzero if both are 0
+    union = (outputs | labels).float().sum((1, 2))  # Will be zero if both are 0
 
-    iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our devision to avoid 0/0
+    iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our division to avoid 0/0
 
-    return iou.mean()  # Or thresholded.mean() if you are interested in average across the batch
+    return iou.mean() 
 
 
-def acc_pytorch(outputs: torch.Tensor, labels: torch.Tensor):
+def acc_pytorch(outputs: torch.Tensor, labels: torch.Tensor, ignore: int = None):
     outputs = outputs.squeeze(1)
-    acc = torch.sum(outputs == labels) / (labels.size(0) * labels.size(1) * labels.size(2))
+
+    # If ignore parameter is provided, create a mask of values to consider
+    if ignore is not None:
+        mask = (labels != ignore)
+        outputs = outputs[mask]
+        labels = labels[mask]
+
+    acc = torch.sum(outputs == labels).float() / labels.numel()
 
     return acc
 
@@ -125,36 +140,26 @@ def check_homogeneity_majority(tensor, num_classes, ignore_index):
     return class_tensor
 
 
-def check_homogeneity_proportions(tensor, num_classes, ignore_index):
-
-    # Get the shape of the tensor
-    original_shape = tensor.shape
-    last_dim = original_shape[-1]
-
-    # Reshape the tensor to 2D for easy comparison
-    tensor = tensor.reshape(-1, last_dim)
-
-    # Create a mask for elements to ignore
-    ignore_mask = tensor.eq(ignore_index)
-
-    # Get the mask for valid elements (not equal to ignore_index)
-    valid_mask = ~ignore_mask
-
-    # Get a tensor representation of the indices (used for gathering counts)
-    indices = torch.arange(num_classes).unsqueeze(0).unsqueeze(0).to(tensor.device)
-
-    # Calculate the counts of each class along the last dimension, excluding the ignore_index
-    class_counts = (tensor.unsqueeze(-1) == indices).float() * valid_mask.unsqueeze(-1)
-    class_counts = class_counts.sum(dim=-2)
-
-    # Calculate the proportions of each class
-    valid_counts = valid_mask.float().sum(dim=-1, keepdim=True)
-    class_proportions = class_counts / valid_counts
-
-    # Reshape the proportions tensor back to the original shape (minus last dimension) and add a new dimension for classes
-    class_proportions = class_proportions.reshape(*original_shape[:-1], num_classes)
-
+def compute_class_proportions(tensor, num_classes):
+    B, H, W, P = tensor.shape  # Batch size, Height, Width, Pixels per patch
+    
+    tensor = tensor.long()
+    # One-hot encode the tensor directly
+    one_hot = torch.nn.functional.one_hot(tensor, num_classes + 1)  # +1 to account for the ignore index
+    one_hot = one_hot[..., :num_classes]  # Remove the extra channel created for the ignore index
+    
+    # Sum over the patch dimension to get counts for each class within each patch
+    class_counts = one_hot.sum(dim=3)
+    
+    # Compute the proportions considering valid pixels only
+    valid_pixel_counts = (tensor != num_classes).float().sum(dim=3, keepdim=True)
+    class_proportions = class_counts.float() / valid_pixel_counts
+    
+    # Handle cases where the denominator is 0 (all pixels are ignored in the patch)
+    class_proportions[torch.isnan(class_proportions)] = 0
+    
     return class_proportions
+
 
 def get_logger(wandb: bool, project: str, name: str, group: str, model: L.LightningModule):
     

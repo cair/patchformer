@@ -80,15 +80,8 @@ class HiearchicalPatchClassifier(nn.Module):
             nn.LayerNorm(dim) for dim in dims
         ])
         
-        self.gelu = nn.GELU()
-        
-        # self.conv_mlp = ConvForward(sum(dims), sum(dims) // 2)
-        
         self.patch_cls = nn.Conv2d(sum(dims), num_classes, kernel_size=1, stride=1)
         
-        # self.patch_cls = nn.Conv2d(sum(dims), num_classes, kernel_size=3, stride=1, padding=1)
-        
-        # self.patch_cls = nn.Linear(sum(dims), num_classes)
         
     def forward(self, x):
         
@@ -122,10 +115,6 @@ class FlatPatchClassifier(nn.Module):
         self.initial_norms = nn.ModuleList([
             nn.LayerNorm(dim) for dim in dims
         ])
-        
-        self.gelu = nn.GELU()
-        
-        # self.conv_mlp = FeedForward(sum(dims), sum(dims) // 2)
         
         self.patch_cls = nn.Conv2d(sum(dims), num_classes, kernel_size=1, stride=1)
         
