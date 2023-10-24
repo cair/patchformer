@@ -12,7 +12,7 @@ from losses.dice import DiceLoss
 import math
 from statistics import mean
 
-from models.hiera import hiera_base_224
+from models.hiera import hiera_base_224, hiera_small_224, hiera_tiny_224
 
 class HieraDC(L.LightningModule):
     def __init__(self,
@@ -21,12 +21,17 @@ class HieraDC(L.LightningModule):
                  train_loader: torch.utils.data.DataLoader,
                  val_loader: torch.utils.data.DataLoader,
                  patch_learning: bool = True,
-                 model_size: str = "small"
+                 model_size: str = "tiny"
                  ):
         super().__init__()
         
         
-        self.vt = hiera_base_224(pretrained=True)
+        if model_size == "base":
+            self.vt = hiera_base_224(pretrained=True)
+        elif model_size == "small":
+            self.vt = hiera_small_224(pretrained=True)
+        elif model_size == "tiny":
+            self.vt = hiera_tiny_224(pretrained=True)
         
         self.patch_sizes = self.vt.patch_sizes
         self.embed_dims = self.vt.embed_dims

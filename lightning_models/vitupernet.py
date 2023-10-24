@@ -26,7 +26,13 @@ class ViTUperNet(L.LightningModule):
         
         self.patch_size = patch_size
         
-        self.vt = create_model(f"vit_{model_size}_patch16_384.orig_in21k_ft_in1k", pretrained=True)
+        if model_size == "base":
+            self.vt = create_model(f"vit_{model_size}_patch16_384.orig_in21k_ft_in1k", pretrained=True)
+        elif model_size == "small":
+            self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
+        elif model_size == "tiny":
+            self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
+            
         
         self.dim = self.vt.num_features
         

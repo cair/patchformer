@@ -26,8 +26,18 @@ class SwinUperNet(L.LightningModule):
         
         self.patch_sizes = patch_sizes
         
+        if model_size == "large":
+            self.vt = create_model(f"swin_{model_size}_patch4_window12_384.ms_in22k_ft_in1k", pretrained=True)
+        elif model_size == "base":
+            self.vt = create_model(f"swin_{model_size}_patch4_window12_384.ms_in22k_ft_in1k", pretrained=True)
+        elif model_size == "small":
+            self.vt = create_model(f"swin_{model_size}_patch4_window7_224.ms_in22k_ft_in1k", pretrained=True)
+        elif model_size == "tiny":
+            self.vt = create_model(f"swin_{model_size}_patch4_window7_224.ms_in22k_ft_in1k", pretrained=True)
+        else:
+            raise NotImplementedError("Model size not implemented")
         
-        self.vt = create_model(f"swin_{model_size}_patch4_window12_384.ms_in22k_ft_in1k", pretrained=True)
+        
         
         dims = self.vt.embed_dims
         

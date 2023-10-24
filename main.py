@@ -29,7 +29,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-pl", "--patch_learning", type=bool, default=False)
-    parser.add_argument("-gpu", "--gpu", type=int, default=0)
+    parser.add_argument("-gpu", "--gpu", type=int, nargs="+", default=0)
     parser.add_argument("-d", "--dataset", type=str, default="coco")
     parser.add_argument("-e", "--epochs", type=int, default=10)
     parser.add_argument("-s", "--seed", type=int, default=12, help="Seed for reproducibility")
@@ -51,7 +51,7 @@ def main():
     
     seed(args.seed)
     
-    train_loader, num_classes = get_dataloader(dataset_name=args.dataset, dataset_type="train", batch_size=8, percentage=args.percentage, image_size=args.image_size)
+    train_loader, num_classes = get_dataloader(dataset_name=args.dataset, dataset_type="train", batch_size=16, percentage=args.percentage, image_size=args.image_size)
     val_loader, num_classes = get_dataloader(dataset_name=args.dataset, dataset_type="val", batch_size=1, percentage=args.percentage, image_size=args.image_size)
 
     if args.model == "swin":
@@ -90,16 +90,17 @@ def main():
                                       patch_learning=args.patch_learning,
                                       model_size=args.model_size)
     
-    project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}"
+    project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}_final"
     
     loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_{args.percentage}_seed{args.seed}", args.group, lightning_model)
     callbacks = get_callbacks(project_name, args.name)
     
     trainer = L.Trainer(max_epochs=args.epochs, 
                         accelerator="gpu", 
-                        devices=[args.gpu], 
+                        devices=args.gpu, 
                         logger=loggers, 
-                        callbacks=callbacks)
+                        callbacks=callbacks,
+                        strategy="ddp_find_unused_parameters_true",)
 
     trainer.fit(model=lightning_model)
 

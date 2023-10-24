@@ -12,7 +12,7 @@ from losses.dice import DiceLoss
 import math
 from statistics import mean
 
-from models.hiera import hiera_base_224
+from models.hiera import hiera_base_224, hiera_tiny_224
 
 class HieraUperNet(L.LightningModule):
     def __init__(self,
@@ -25,8 +25,10 @@ class HieraUperNet(L.LightningModule):
                  ):
         super().__init__()
         
-        
-        self.vt = hiera_base_224(pretrained=True)
+        if model_size == "tiny":
+            self.vt = hiera_tiny_224(pretrained=True)
+        elif model_size == "base":
+            self.vt = hiera_base_224(pretrained=True)
         
         self.scale_factor = 2
         

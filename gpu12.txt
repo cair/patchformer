@@ -1,0 +1,54 @@
+python main.py -pl True -ms base -d ade20k -e 50 -s 12 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d ade20k -e 50 -s 12 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d ade20k -e 50 -s 25 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d ade20k -e 50 -s 25 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d ade20k -e 50 -s 42 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d ade20k -e 50 -s 42 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d ade20k -e 50 -s 12 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d ade20k -e 50 -s 12 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d ade20k -e 50 -s 25 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d ade20k -e 50 -s 25 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d ade20k -e 50 -s 42 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d ade20k -e 50 -s 42 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d ade20k -e 50 -s 12 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d ade20k -e 50 -s 12 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d ade20k -e 50 -s 25 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d ade20k -e 50 -s 25 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d ade20k -e 50 -s 42 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d ade20k -e 50 -s 42 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d cityscapes -e 50 -s 12 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d cityscapes -e 50 -s 12 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d cityscapes -e 50 -s 25 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d cityscapes -e 50 -s 25 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d cityscapes -e 50 -s 42 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d cityscapes -e 50 -s 42 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d cityscapes -e 50 -s 12 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d cityscapes -e 50 -s 12 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d cityscapes -e 50 -s 25 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d cityscapes -e 50 -s 25 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d cityscapes -e 50 -s 42 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d cityscapes -e 50 -s 42 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d cityscapes -e 50 -s 12 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d cityscapes -e 50 -s 12 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d cityscapes -e 50 -s 25 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d cityscapes -e 50 -s 25 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d cityscapes -e 50 -s 42 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d cityscapes -e 50 -s 42 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d potsdam -e 50 -s 12 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d potsdam -e 50 -s 12 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d potsdam -e 50 -s 25 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d potsdam -e 50 -s 25 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d potsdam -e 50 -s 42 -lr 0.0001 -m swin -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d potsdam -e 50 -s 42 -lr 0.0001 -m swin -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d potsdam -e 50 -s 12 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d potsdam -e 50 -s 12 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d potsdam -e 50 -s 25 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d potsdam -e 50 -s 25 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d potsdam -e 50 -s 42 -lr 0.0001 -m hiera -n patchformer -wb True -g patchformer -p 1.0 -is 224
+python main.py -ms base -d potsdam -e 50 -s 42 -lr 0.0001 -m hiera -n baseline -wb True -g baseline -p 1.0 -is 224
+python main.py -pl True -ms base -d potsdam -e 50 -s 12 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d potsdam -e 50 -s 12 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d potsdam -e 50 -s 25 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d potsdam -e 50 -s 25 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384
+python main.py -pl True -ms base -d potsdam -e 50 -s 42 -lr 0.0001 -m vit -n patchformer -wb True -g patchformer -p 1.0 -is 384
+python main.py -ms base -d potsdam -e 50 -s 42 -lr 0.0001 -m vit -n baseline -wb True -g baseline -p 1.0 -is 384

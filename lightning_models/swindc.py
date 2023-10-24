@@ -20,7 +20,7 @@ class SwinDC(L.LightningModule):
                  val_loader: torch.utils.data.DataLoader,
                  patch_learning: bool = True,
                  patch_sizes: int = [4, 8, 16, 32],
-                 model_size: str = "base"
+                 model_size: str = "tiny"
                  ):
         super().__init__()
          

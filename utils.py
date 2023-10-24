@@ -40,7 +40,12 @@ def acc_pytorch(outputs: torch.Tensor, labels: torch.Tensor, ignore: int = None)
         outputs = outputs[mask]
         labels = labels[mask]
 
-    acc = torch.sum(outputs == labels).float() / labels.numel()
+    total = labels.numel()
+
+    if total == 0:  # Safeguard against division by zero
+        return torch.tensor(0.0)
+
+    acc = torch.sum(outputs == labels).float() / total
 
     return acc
 

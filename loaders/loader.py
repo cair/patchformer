@@ -1,20 +1,17 @@
 import torch
 from torch.utils.data import DataLoader
 
-from datasets import load_dataset
-
 from loaders.coco_stuff import COCOStuff
 from loaders.ade20k import ADE20K
 from loaders.mapillary import Cityscapes
 from loaders.potsdam import Potsdam
-from loaders.mapai import MapAI
 
 def get_dataloader(dataset_name: str, 
                    dataset_type: str, 
                    batch_size: int, 
                    percentage: float,
                    image_size: int = 384, 
-                   num_workers: int = 1) -> DataLoader:
+                   num_workers: int = 4) -> DataLoader:
     
     shuffle = dataset_type == "train"
     
@@ -26,8 +23,6 @@ def get_dataloader(dataset_name: str,
         dataset = Cityscapes(root="data/cityscapes", type=dataset_type, percentage=percentage, image_size=image_size)
     elif dataset_name == "potsdam":
         dataset = Potsdam(root="data/potsdam", type=dataset_type, percentage=percentage, image_size=image_size)
-    elif dataset_name == "mapai":
-        dataset = MapAI(root="data/mapai", type=dataset_type, percentage=percentage, image_size=image_size)
     else:
         return NotImplementedError("Dataset not implemented")
     
