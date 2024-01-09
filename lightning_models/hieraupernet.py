@@ -12,7 +12,7 @@ from losses.dice import DiceLoss
 import math
 from statistics import mean
 
-from models.hiera import hiera_base_224, hiera_tiny_224
+from models.hiera import hiera_base_224, hiera_small_224, hiera_tiny_224
 
 class HieraUperNet(L.LightningModule):
     def __init__(self,
@@ -21,12 +21,15 @@ class HieraUperNet(L.LightningModule):
                  train_loader: torch.utils.data.DataLoader,
                  val_loader: torch.utils.data.DataLoader,
                  patch_learning: bool = True,
-                 model_size: str = "small"
+                 model_size: str = "small",
+                 cls_type: str = "conv1x1"
                  ):
         super().__init__()
         
         if model_size == "tiny":
             self.vt = hiera_tiny_224(pretrained=True)
+        elif model_size == "small":
+            self.vt = hiera_small_224(pretrained=True)
         elif model_size == "base":
             self.vt = hiera_base_224(pretrained=True)
         
@@ -64,7 +67,7 @@ class HieraUperNet(L.LightningModule):
         if self.patch_learning:
             self.patch_acc = list()
             self.patch_loss = list()
-            self.patch_classifier = HiearchicalPatchClassifier(dims=self.embed_dims, num_classes=self.num_classes)
+            self.patch_classifier = HiearchicalPatchClassifier(dims=self.embed_dims, num_classes=self.num_classes, cls_type=cls_type)
     
     
     def forward(self, x, mask=None):

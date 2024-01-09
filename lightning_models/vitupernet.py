@@ -20,18 +20,21 @@ class ViTUperNet(L.LightningModule):
                  val_loader: torch.utils.data.DataLoader,
                  patch_learning: bool = True,
                  patch_size: int = 16,
-                 model_size: str = "small"
+                 model_size: str = "small",
+                 cls_type: str = "conv1x1"
                  ):
         super().__init__()
         
         self.patch_size = patch_size
         
-        if model_size == "base":
-            self.vt = create_model(f"vit_{model_size}_patch16_384.orig_in21k_ft_in1k", pretrained=True)
-        elif model_size == "small":
-            self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
-        elif model_size == "tiny":
-            self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
+        self.vt = create_model(f"vit_{model_size}_patch16_224.augreg_in21k_ft_in1k", pretrained=True)
+        
+        # if model_size == "base":
+        #     self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
+        # elif model_size == "small":
+        #     self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
+        # elif model_size == "tiny":
+        #     self.vt = create_model(f"vit_{model_size}_patch16_384.augreg_in21k_ft_in1k", pretrained=True)
             
         
         self.dim = self.vt.num_features
@@ -50,7 +53,6 @@ class ViTUperNet(L.LightningModule):
         self.num_classes = num_classes
         self.learning_rate = learning_rate
         
-        # self.loss = torch.nn.CrossEntropyLoss(ignore_index=self.num_classes, label_smoothing=0.1)
         self.loss = DiceLoss(mode="multiclass", ignore_index=self.num_classes)
         
         self.patch_learning = patch_learning
@@ -68,7 +70,7 @@ class ViTUperNet(L.LightningModule):
         if self.patch_learning:
             self.patch_acc = list()
             self.patch_loss = list()
-            self.patch_classifier = FlatPatchClassifier(dims=[self.dim for _ in range(4)], num_classes=self.num_classes)
+            self.patch_classifier = FlatPatchClassifier(dims=[self.dim for _ in range(4)], num_classes=self.num_classes, cls_type=cls_type)
     
     
     def forward(self, x, mask=None):

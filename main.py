@@ -41,6 +41,8 @@ def parse_args():
     parser.add_argument("-wb", "--wandb", type=bool, default=False, help="Use wandb")
     parser.add_argument("-g", "--group", type=str, default=None, help="Group for wandb")
     parser.add_argument("-p", "--percentage", type=float, default=0.01, help="Percentage of dataset to use")
+    parser.add_argument("-ct", "--cls_type", type=str, default="conv1x1", help="Type of classifier to use")
+    parser.add_argument("-bs", "--batch_size", type=int, default=16, help="Batch size")
     
     
     return parser.parse_args()
@@ -51,7 +53,7 @@ def main():
     
     seed(args.seed)
     
-    train_loader, num_classes = get_dataloader(dataset_name=args.dataset, dataset_type="train", batch_size=16, percentage=args.percentage, image_size=args.image_size)
+    train_loader, num_classes = get_dataloader(dataset_name=args.dataset, dataset_type="train", batch_size=args.batch_size, percentage=args.percentage, image_size=args.image_size)
     val_loader, num_classes = get_dataloader(dataset_name=args.dataset, dataset_type="val", batch_size=1, percentage=args.percentage, image_size=args.image_size)
 
     if args.model == "swin":
@@ -60,37 +62,42 @@ def main():
                                     train_loader=train_loader,
                                     val_loader=val_loader,
                                     patch_learning=args.patch_learning,
-                                    model_size=args.model_size)
+                                    model_size=args.model_size,
+                                    cls_type=args.cls_type)
     elif args.model == "vit":
         lightning_model = ViTUperNet(num_classes=num_classes,
                                     learning_rate=args.learning_rate,
                                     train_loader=train_loader,
                                     val_loader=val_loader,
                                     patch_learning=args.patch_learning,
-                                    model_size=args.model_size)
+                                    model_size=args.model_size,
+                                    cls_type=args.cls_type)
     elif args.model == "hiera":
         lightning_model = HieraUperNet(num_classes=num_classes,
                                       learning_rate=args.learning_rate,
                                       train_loader=train_loader,
                                       val_loader=val_loader,
                                       patch_learning=args.patch_learning,
-                                      model_size=args.model_size)
+                                      model_size=args.model_size,
+                                      cls_type=args.cls_type)
     elif args.model == "swindc":
         lightning_model = SwinDC(num_classes=num_classes,
                                       learning_rate=args.learning_rate,
                                       train_loader=train_loader,
                                       val_loader=val_loader,
                                       patch_learning=args.patch_learning,
-                                      model_size=args.model_size)
+                                      model_size=args.model_size,
+                                      cls_type=args.cls_type)
     elif args.model == "hieradc":
         lightning_model = HieraDC(num_classes=num_classes,
                                       learning_rate=args.learning_rate,
                                       train_loader=train_loader,
                                       val_loader=val_loader,
                                       patch_learning=args.patch_learning,
-                                      model_size=args.model_size)
+                                      model_size=args.model_size,
+                                      cls_type=args.cls_type)
     
-    project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}_final"
+    project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}_{args.cls_type}"
     
     loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_{args.percentage}_seed{args.seed}", args.group, lightning_model)
     callbacks = get_callbacks(project_name, args.name)

@@ -20,13 +20,23 @@ class SwinDC(L.LightningModule):
                  val_loader: torch.utils.data.DataLoader,
                  patch_learning: bool = True,
                  patch_sizes: int = [4, 8, 16, 32],
-                 model_size: str = "tiny"
-                 ):
+                 model_size: str = "tiny",
+                 cls_type: str = "conv1x1"):
         super().__init__()
          
         self.patch_sizes = patch_sizes
         
-        self.vt = create_model(f"swin_{model_size}_patch4_window12_384.ms_in22k_ft_in1k", pretrained=True)
+        if model_size == "large":
+            self.vt = create_model(f"swin_{model_size}_patch4_window12_384.ms_in22k_ft_in1k", pretrained=True)
+        elif model_size == "base":
+            self.vt = create_model(f"swin_{model_size}_patch4_window12_384.ms_in22k_ft_in1k", pretrained=True)
+        elif model_size == "small":
+            self.vt = create_model(f"swin_{model_size}_patch4_window7_224.ms_in22k_ft_in1k", pretrained=True)
+        elif model_size == "tiny":
+            self.vt = create_model(f"swin_{model_size}_patch4_window7_224.ms_in22k_ft_in1k", pretrained=True)
+        else:
+            raise NotImplementedError("Model size not implemented")
+        
         dims = self.vt.embed_dims
         
         self.dec = Decoder(num_classes=num_classes, encoder_channels=dims)
@@ -54,7 +64,7 @@ class SwinDC(L.LightningModule):
         if self.patch_learning:
             self.patch_acc = list()
             self.patch_loss = list()
-            self.patch_classifier = HiearchicalPatchClassifier(dims=dims, num_classes=self.num_classes)
+            self.patch_classifier = HiearchicalPatchClassifier(dims=dims, num_classes=self.num_classes, cls_type=cls_type)
     
     
     def forward(self, x, mask=None):

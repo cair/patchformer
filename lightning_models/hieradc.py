@@ -21,7 +21,8 @@ class HieraDC(L.LightningModule):
                  train_loader: torch.utils.data.DataLoader,
                  val_loader: torch.utils.data.DataLoader,
                  patch_learning: bool = True,
-                 model_size: str = "tiny"
+                 model_size: str = "tiny",
+                 cls_type: str = "conv1x1"
                  ):
         super().__init__()
         
@@ -61,7 +62,7 @@ class HieraDC(L.LightningModule):
         if self.patch_learning:
             self.patch_acc = list()
             self.patch_loss = list()
-            self.patch_classifier = HiearchicalPatchClassifier(dims=self.embed_dims, num_classes=self.num_classes)
+            self.patch_classifier = HiearchicalPatchClassifier(dims=self.embed_dims, num_classes=self.num_classes, cls_type=cls_type)
     
     
     def forward(self, x, mask=None):
