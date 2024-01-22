@@ -97,9 +97,9 @@ def main():
                                       model_size=args.model_size,
                                       cls_type=args.cls_type)
     
-    project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}_{args.cls_type}"
+    project_name = f"{args.model}_{args.dataset}_{args.image_size}_{args.model_size}"
     
-    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_{args.percentage}_seed{args.seed}", args.group, lightning_model)
+    loggers = get_logger(args.wandb, project_name, args.name + f"_{args.learning_rate}_{args.percentage}_seed{args.seed}_{args.cls_type}", args.group, lightning_model)
     callbacks = get_callbacks(project_name, args.name)
     
     trainer = L.Trainer(max_epochs=args.epochs, 

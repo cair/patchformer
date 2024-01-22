@@ -209,4 +209,5 @@ class SwinDC(L.LightningModule):
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_max=10, eta_min=1e-5, T_mult=2) # 10, 20, 40 = 70
+        return optimizer, scheduler

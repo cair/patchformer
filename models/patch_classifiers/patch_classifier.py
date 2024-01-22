@@ -111,12 +111,12 @@ class HiearchicalPatchClassifier(nn.Module):
             
         x = torch.cat([x[0], previous_candidate], dim=1)
         
-        if self.cls_type is "mlp":
+        if self.cls_type == "mlp":
             x = x.permute(0, 2, 3, 1)
         
         cls = self.patch_cls(x)
         
-        if self.cls_type is "mlp":
+        if self.cls_type == "mlp":
             cls = cls.permute(0, 3, 1, 2)
         
         return orig_x, cls
@@ -131,11 +131,11 @@ class FlatPatchClassifier(nn.Module):
         
         self.cls_type = cls_type
         
-        if cls_type is "conv1x1":
+        if cls_type == "conv1x1":
             self.patch_cls = nn.Conv2d(sum(dims), num_classes, kernel_size=1, stride=1)
-        elif cls_type is "conv3x3":
+        elif cls_type == "conv3x3":
             self.patch_cls = nn.Conv2d(sum(dims), num_classes, kernel_size=3, stride=1, padding=1)
-        elif cls_type is "mlp":
+        elif cls_type == "mlp":
             self.patch_cls = nn.Linear(sum(dims), num_classes)
         
     def forward(self, x):
@@ -148,12 +148,12 @@ class FlatPatchClassifier(nn.Module):
             
         x = torch.cat([*x], dim=1)
         
-        if self.cls_type is "mlp":
+        if self.cls_type == "mlp":
             x = x.permute(0, 2, 3, 1)
             
         cls = self.patch_cls(x)
         
-        if self.cls_type is "mlp":
+        if self.cls_type == "mlp":
             cls = cls.permute(0, 3, 1, 2)
         
         return orig_x, cls
